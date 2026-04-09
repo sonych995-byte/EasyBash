@@ -108,3 +108,7 @@ cd web && cd myweb && rm logic.py
 
 EasyBash:
 for logic.py in web|myweb rm
+
+## 🎬 Demo
+
+![demo](demo.gif)
