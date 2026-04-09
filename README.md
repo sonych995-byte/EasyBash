@@ -40,6 +40,8 @@ EasyBash separates commands into two main categories:
 ### Basic Usage
 
 ```bash
+https://github.com/sonych995-byte/EasyBash.git
+
 python easybash.py
 ```
 
