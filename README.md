@@ -91,3 +91,19 @@ subprocess
 pathlib
 glob
 typing
+
+# Why EasyBash?
+
+EasyBash makes command-line workflows faster by:
+
+- Eliminating repetitive `cd` commands
+- Simplifying long paths
+- Providing intuitive syntax for file and folder operations
+
+Example:
+
+Traditional Bash:
+cd web && cd myweb && rm logic.py
+
+EasyBash:
+for logic.py in web|myweb rm
