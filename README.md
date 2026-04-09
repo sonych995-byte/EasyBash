@@ -111,3 +111,6 @@ for logic.py in web|myweb rm
 
 ## version
 1.0.1
+
+![Python](https://img.shields.io/badge/python-3.8+-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
