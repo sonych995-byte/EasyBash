@@ -76,3 +76,18 @@ Add to PATH
 4. Select Path
 5. Click "Edit"
 Add your .bat file directory
+
+# Dependencies
+
+EasyBash uses only Python standard library modules, so **no external installation is required**.
+
+---
+
+## Built-in Modules
+
+```text
+shlex
+subprocess
+pathlib
+glob
+typing
