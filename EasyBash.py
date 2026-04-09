@@ -1,163 +1,236 @@
 #!/usr/bin/env python3
 
-import subprocess
+"""
+EasyBash - A simple CLI tool to simplify Bash commands.
+"""
+
 import shlex
-import sys
+import subprocess
 from pathlib import Path
+import glob
+from typing import List, Optional, Tuple
 
+
+# ========================
 # Constants
-EASY_BASH_COMMANDS = {"for", "rush", "exit"}
+# ========================
 
-def parse_command(text):
-    """Parse and validate command from user input"""
-    if not text or not text.strip():
+EASY_BASH_COMMANDS = {"for", "rush", "exit", "help"}
+
+
+# ========================
+# Parsing
+# ========================
+
+def parse_command(text: str) -> Tuple[Optional[str], List[str]]:
+    """
+    Parse user input into command and arguments.
+
+    Args:
+        text: Raw input string
+
+    Returns:
+        Tuple of (command, list of parts)
+    """
+    if not text.strip():
         return None, []
-    
-    # Use shlex for proper tokenization (handles quotes)
+
     try:
-        cmd_parts = shlex.split(text)
-    except ValueError as e:
-        print(f"Error parsing command: {e}")
+        parts = shlex.split(text)
+    except ValueError as error:
+        print(f"Parse error: {error}")
         return None, []
-    
-    if not cmd_parts:
-        return None, []
-    
-    command = cmd_parts[0]
-    return command if command in EASY_BASH_COMMANDS else None, cmd_parts
 
-def validate_paths(paths_str):
-    """Validate and return list of existing paths"""
-    paths = [p.strip() for p in paths_str.split('|') if p.strip()]
+    if not parts:
+        return None, []
+
+    command = parts[0]
+    if command in EASY_BASH_COMMANDS:
+        return command, parts
+
+    return None, parts
+
+
+# ========================
+# Path Handling
+# ========================
+
+def validate_paths(paths_str: str) -> List[Path]:
+    """
+    Validate and return existing directories.
+
+    Args:
+        paths_str: Path string separated by "|"
+
+    Returns:
+        List of valid Path objects
+    """
     valid_paths = []
-    
-    for path in paths:
-        path_obj = Path(path).expanduser().resolve()
+
+    for raw_path in paths_str.split("|"):
+        raw_path = raw_path.strip()
+        if not raw_path:
+            continue
+
+        path_obj = Path(raw_path).expanduser().resolve()
+
         if path_obj.exists() and path_obj.is_dir():
-            valid_paths.append(str(path_obj))
+            valid_paths.append(path_obj)
         else:
-            print(f"Warning: Path '{path}' does not exist or is not a directory")
-    
+            print(f"Warning: invalid path -> {raw_path}")
+
     return valid_paths
 
-def execute_bash_command(bash_command):
-    """Execute bash command safely"""
+
+# ========================
+# Command Execution
+# ========================
+
+def run_command(command: List[str], cwd: Optional[Path] = None) -> int:
+    """
+    Execute a command safely.
+
+    Args:
+        command: Command as list
+        cwd: Working directory
+
+    Returns:
+        Return code
+    """
     try:
-        print(f"Generated: {bash_command}")
+        print(f"[RUN] {' '.join(command)} (cwd={cwd})")
+
         result = subprocess.run(
-            bash_command, 
-            shell=True, 
-            executable='/bin/bash',
-            text=True,
-            capture_output=False
+            command,
+            cwd=cwd,
+            check=False
         )
         return result.returncode
-    except Exception as e:
-        print(f"Error executing command: {e}")
+
+    except Exception as error:
+        print(f"Execution error: {error}")
         return 1
 
-def for_easy_bash_command(cmd_parts):
-    """
-    Syntax: for (file) in (path1|path2|path3) (bash command)
-    Example: for test.txt in /tmp|/home "ls -la"
-    """
-    if len(cmd_parts) < 5:
-        print("Error: Invalid syntax")
-        print("Usage: for (filename) in (path1|path2|path3) (bash command)")
-        print("Example: for test.txt in /tmp|/home 'ls -la'")
-        return
-    
-    file_name = cmd_parts[1]
-    paths_str = cmd_parts[3]
-    bash_cmd = ' '.join(cmd_parts[4:])  # Allow multi-word commands
-    
-    valid_paths = validate_paths(paths_str)
-    if not valid_paths:
-        print("Error: No valid paths provided")
-        return
-    
-    # Build command
-    bash_command = ""
-    for path in valid_paths:
-        bash_command += f"cd '{path}' && "
-    bash_command += f"{bash_cmd} '{file_name}'"
-    
-    execute_bash_command(bash_command)
 
-def rush_easy_bash_command(cmd_parts):
+# ========================
+# EasyBash Commands
+# ========================
+
+def handle_rush(cmd_parts: List[str]) -> None:
     """
-    Syntax: rush (path1|path2|path3) (bash command)
-    Example: rush /tmp|/home "ls -la"
+    rush (path1|path2) (command)
+
+    Execute command inside multiple directories.
     """
     if len(cmd_parts) < 3:
-        print("Error: Invalid syntax")
-        print("Usage: rush (path1|path2|path3) (bash command)")
-        print("Example: rush /tmp|/home 'ls -la'")
+        print("Usage: rush (path1|path2) (command)")
         return
-    
-    paths_str = cmd_parts[1]
-    bash_cmd = ' '.join(cmd_parts[2:])  # Allow multi-word commands
-    
-    valid_paths = validate_paths(paths_str)
-    if not valid_paths:
-        print("Error: No valid paths provided")
-        return
-    
-    # Build command
-    bash_command = ""
-    for path in valid_paths:
-        bash_command += f"cd '{path}' && "
-    bash_command += f"{bash_cmd}"
-    
-    execute_bash_command(bash_command)
 
-def show_help():
-    """Display help information"""
-    help_text = """
-EasyBash Commands:
+    paths = validate_paths(cmd_parts[1])
+    if not paths:
+        print("Error: no valid paths")
+        return
+
+    command = cmd_parts[2:]
+
+    for path in paths:
+        run_command(command, cwd=path)
+
+
+def handle_for(cmd_parts: List[str]) -> None:
+    """
+    for (file_pattern) in (path1|path2) (command)
+
+    Execute command on files in multiple directories.
+    Supports wildcard patterns.
+    """
+    if len(cmd_parts) < 5:
+        print("Usage: for (file) in (path1|path2) (command)")
+        return
+
+    file_pattern = cmd_parts[1]
+    paths = validate_paths(cmd_parts[3])
+
+    if not paths:
+        print("Error: no valid paths")
+        return
+
+    base_command = cmd_parts[4:]
+
+    for path in paths:
+        pattern = str(path / file_pattern)
+        matched_files = glob.glob(pattern)
+
+        if not matched_files:
+            print(f"No match in {path} for {file_pattern}")
+            continue
+
+        for file_path in matched_files:
+            command = base_command + [file_path]
+            run_command(command)
+
+
+# ========================
+# Help
+# ========================
+
+def show_help() -> None:
+    """Display help message."""
+    print("""
+EasyBash Commands
 -----------------
-for (filename) in (path1|path2|path3) (bash command)
-    Execute command on filename in multiple directories
-    Example: for test.txt in /tmp|/home 'ls -la'
 
-rush (path1|path2|path3) (bash command)  
-    Execute command in multiple directories
-    Example: rush /tmp|/home 'pwd'
+for (file) in (path1|path2) (command)
+    Run command on files
+    Example:
+        for *.py in src|tests python
+
+rush (path1|path2) (command)
+    Run command inside directories
+    Example:
+        rush src|tests ls -la
 
 exit
-    Exit EasyBash
+    Exit program
 
-Note: Use quotes for commands with spaces
-"""
-    print(help_text)
+help
+    Show this message
+""")
 
-def main():
-    """Main program loop"""
+
+# ========================
+# Main Loop
+# ========================
+
+def main() -> None:
+    """Main program loop."""
     print("EasyBash Shell (type 'help' for commands)")
-    
+
     while True:
         try:
             text = input("easybash> ")
         except (EOFError, KeyboardInterrupt):
             print("\nExiting...")
             break
-        
-        if text.lower() == 'help':
-            show_help()
-            continue
-        
-        command, cmd_parts = parse_command(text)
-        
+
+        command, parts = parse_command(text)
+
         if command == "for":
-            for_easy_bash_command(cmd_parts)
+            handle_for(parts)
+
         elif command == "rush":
-            rush_easy_bash_command(cmd_parts)
+            handle_rush(parts)
+
+        elif command == "help":
+            show_help()
+
         elif command == "exit":
             print("Goodbye!")
             break
-        elif command is None and text.strip():
-            print(f"Unknown command: '{cmd_parts[0] if cmd_parts else ''}'")
-            print("Type 'help' for available commands")
+
+        elif parts:
+            print(f"Unknown command: {parts[0]}")
+
 
 if __name__ == "__main__":
     main()
