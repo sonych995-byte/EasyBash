@@ -1,11 +1,11 @@
-# ⚡ EasyBash
+# EasyBash
 
 EasyBash is a CLI tool designed to make Bash commands **simpler, faster, and more readable**.  
 It focuses on reducing repetitive `cd` usage and simplifying long paths.
 
 ---
 
-# 🎯 Purpose
+# Purpose
 
 - Reduce repetitive `cd` commands
 - Simplify complex file paths
@@ -14,7 +14,7 @@ It focuses on reducing repetitive `cd` usage and simplifying long paths.
 
 ---
 
-# 🧠 Core Concept
+# Core Concept
 
 EasyBash separates commands into two main categories:
 
@@ -25,9 +25,54 @@ EasyBash separates commands into two main categories:
 
 ---
 
-# 🚀 Installation
+# Installation
 
-## 🔹 Basic Usage
+## Basic Usage
 
 ```bash
 python easybash.py
+```
+
+---
+
+# Global Command Setup (Use Anywhere)
+## termux
+```bash
+chmod +x easybash
+```
+```bash
+mv easybash $PREFIX/bin/
+```
+## linux
+```bash
+chmod +x easybash
+```
+```bash
+sudo mv easybash /usr/local/bin/
+```
+## macOS
+```bash
+chmod +x easybash
+```
+```bash
+sudo mv easybash /usr/local/bin/
+```
+## Windows
+### Create a file:
+```bash
+easybash.bat
+```
+### Add:
+```bash
+@echo off
+```
+```bash
+python C:\path\to\easybash.py %*
+```
+Add to PATH
+1. Open Start Menu → Search "Environment Variables"
+2. Click "Edit the system environment variables"
+3. Go to "Environment Variables"
+4. Select Path
+5. Click "Edit"
+Add your .bat file directory
