@@ -1,91 +1,93 @@
+```markdown
 # EasyBash
 
-EasyBash is a CLI tool designed to make Bash commands **simpler, faster, and more readable**.  
-It focuses on reducing repetitive `cd` usage and simplifying long paths.
+![Python](https://img.shields.io/badge/python-3.8+-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
-# Purpose
+## 🎯 Goal
+
+EasyBash is a CLI tool designed to make Bash commands **simpler, faster, and more powerful** using Python.  
+It reduces repetitive `cd` usage, simplifies long paths, and improves developer workflow speed.
+
+---
+
+## Purpose
 
 - Reduce repetitive `cd` commands
 - Simplify complex file paths
 - Separate file operations and folder operations
 - Improve developer workflow speed
+- Make Bash easier and more intuitive
 
 ---
 
-# Core Concept
+## Core Concept
 
 EasyBash separates commands into two main categories:
 
 | Command | Target | Purpose |
-|--------|-------|--------|
-| `for` | Files | Perform actions on files |
-| `rush` | Folders | Navigate and execute commands in directories |
+|---------|--------|---------|
+| `for`   | Files  | Perform actions on files in multiple directories |
+| `rush`  | Folders| Navigate and execute commands in multiple directories |
+| `exit`  | CLI    | Exit EasyBash |
+| `help`  | CLI    | Show this command guide |
 
 ---
 
-# Installation
+## Installation
 
-## Basic Usage
+### Basic Usage
 
 ```bash
 python easybash.py
 ```
 
----
+Global Command Setup (Use Anywhere)
 
-# Global Command Setup (Use Anywhere)
-## termux
+Make EasyBash accessible from any directory by installing the launcher script.
+
+Termux
+
 ```bash
 chmod +x easybash
-```
-```bash
 mv easybash $PREFIX/bin/
 ```
-## linux
+
+Linux
+
 ```bash
 chmod +x easybash
-```
-```bash
 sudo mv easybash /usr/local/bin/
 ```
-## macOS
+
+macOS
+
 ```bash
 chmod +x easybash
-```
-```bash
 sudo mv easybash /usr/local/bin/
 ```
-## Windows
-### Create a file:
-```bash
-easybash.bat
+
+Windows
+
+1. Create a file easybash.bat with the following content:
+   ```batch
+   @echo off
+   python C:\path\to\easybash.py %*
+   ```
+2. Add the directory containing easybash.bat to your PATH:
+   · Open Start Menu → Search "Environment Variables"
+   · Click "Edit the system environment variables"
+   · Go to "Environment Variables" → Select Path → Edit → Add the directory
+
+Dependencies
+
+EasyBash uses only Python standard library modules, so no external installation is required.
+
+Built-in Modules
+
 ```
-### Add:
-```bash
-@echo off
-```
-```bash
-python C:\path\to\easybash.py %*
-```
-Add to PATH
-1. Open Start Menu → Search "Environment Variables"
-2. Click "Edit the system environment variables"
-3. Go to "Environment Variables"
-4. Select Path
-5. Click "Edit"
-Add your .bat file directory
-
-# Dependencies
-
-EasyBash uses only Python standard library modules, so **no external installation is required**.
-
----
-
-## Built-in Modules
-
-```text
 shlex
 subprocess
 pathlib
@@ -93,28 +95,97 @@ glob
 typing
 ```
 
-# Why EasyBash?
+---
 
-EasyBash makes command-line workflows faster by:
+Commands
 
-- Eliminating repetitive `cd` commands
-- Simplifying long paths
-- Providing intuitive syntax for file and folder operations
+1. for - Operate on a single file in multiple directories
+
+```bash
+for (filename) in (path1|path2|path3) (bash command)
+```
 
 Example:
 
+```bash
+for test.txt in /tmp|/home "rm"
+```
+
+This runs:
+
+```bash
+cd /tmp && rm test.txt
+cd /home && rm test.txt
+```
+
+2. rush - Operate on directories
+
+```bash
+rush (path1|path2|path3) (bash command)
+```
+
+Example:
+
+```bash
+rush /tmp|/home "ls -la"
+```
+
+This runs:
+
+```bash
+cd /tmp && ls -la
+cd /home && ls -la
+```
+
+3. exit - Quit EasyBash
+
+```bash
+exit
+```
+
+4. help - Show command guide
+
+```bash
+help
+```
+
+---
+
+Notes
+
+· You can provide as many paths as you want using |:
+  ```bash
+  for target.txt in path1|path2|path3|... rm
+  ```
+· Use quotes for commands with spaces:
+  ```bash
+  rush /tmp|/home "ls -la"
+  ```
+· Invalid paths will be skipped with a warning; execution continues.
+· EasyBash works cross-platform: Linux, macOS, Windows, and Termux.
+
+---
+
+Why EasyBash?
+
+EasyBash makes command-line workflows faster by:
+
+· Eliminating repetitive cd commands
+· Simplifying long paths
+· Providing intuitive syntax for file and folder operations
+
+Example Comparison:
+
 Traditional Bash:
+
+```bash
 cd web && cd myweb && rm logic.py
+```
 
 EasyBash:
+
+```bash
 for logic.py in web|myweb rm
+```
 
-## version
-1.0.1
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-![Python](https://img.shields.io/badge/python-3.8+-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+```
