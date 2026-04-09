@@ -186,5 +186,3 @@ EasyBash:
 ```bash
 for logic.py in web|myweb rm
 ```
-
-```
