@@ -91,6 +91,7 @@ subprocess
 pathlib
 glob
 typing
+```
 
 # Why EasyBash?
 
