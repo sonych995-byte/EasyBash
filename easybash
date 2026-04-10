@@ -77,6 +77,11 @@ HELP = {
         "usage": "tree [PATH]",
         "desc": "Display directory tree with detailed file info (size, permissions, owner, group, mtime)",
         "example": "tree /home/user/docs"
+    },
+    "update": {
+        "usage": "update",
+        "desc": "Update EasyBash from remote git repository",
+        "example": "update"
     }
 }
 
@@ -612,6 +617,40 @@ class EasyBash:
         path = Path(root).expanduser().resolve()
         TreeDisplay.display(path)
 
+    def update(self, line):
+        """Update EasyBash via git pull from the official repository."""
+        if self.executor.dry_run:
+            cprint("[DRY-RUN] Would run: git pull https://github.com/sonych995-byte/EasyBash.git", Color.YELLOW)
+            return
+
+        # ไดเรกทอรีที่เก็บสคริปต์ปัจจุบัน (EasyBash)
+        script_dir = Path(__file__).parent.resolve()
+        cprint(f"Updating EasyBash from {script_dir}...", Color.CYAN)
+
+        try:
+            # ใช้ git pull พร้อม remote URL โดยตรง (ไม่ต้องพึ่งพา origin)
+            result = subprocess.run(
+                ["git", "pull", "https://github.com/sonych995-byte/EasyBash.git"],
+                cwd=script_dir,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if result.returncode == 0:
+                cprint("✅ Update successful!", Color.GREEN)
+                if result.stdout:
+                    cprint(result.stdout, Color.CYAN)
+            else:
+                cprint(f"❌ Update failed with code {result.returncode}", Color.RED)
+                if result.stderr:
+                    cprint(result.stderr, Color.RED)
+        except subprocess.TimeoutExpired:
+            cprint("[ERROR] Git operation timed out", Color.RED)
+        except FileNotFoundError:
+            cprint("[ERROR] 'git' command not found. Please install Git.", Color.RED)
+        except Exception as e:
+            cprint(f"[ERROR] {e}", Color.RED)
+
     def run(self, raw):
         raw = raw.strip()
         if not raw:
@@ -645,6 +684,8 @@ class EasyBash:
             return self.finddup(raw)
         if cmd == "tree":
             return self.tree(raw)
+        if cmd == "update":
+            return self.update(raw)
 
         if cmd == "for" and "=>" in raw:
             left, right = raw.split("=>", 1)
@@ -670,7 +711,7 @@ class EasyBash:
 if __name__ == "__main__":
     eb = EasyBash()
 
-    cprint("EasyBash v6.3 🚀", Color.CYAN)
+    cprint("EasyBash v6.4 🚀", Color.CYAN)
 
     while True:
         try:
