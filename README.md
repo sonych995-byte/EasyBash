@@ -82,7 +82,7 @@ Windows
    · Click "Edit the system environment variables"
    · Go to "Environment Variables" → Select Path → Edit → Add the directory
 
-Dependencies
+## Dependencies
 
 EasyBash uses only Python standard library modules, so no external installation is required.
 
