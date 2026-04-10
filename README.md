@@ -370,7 +370,7 @@ exit                           # quit
 
 ---
 
-## Commands
+## Commands (Complete information)
 
 This section provides complete reference documentation for every built-in command in EasyBash. Each entry covers syntax, parameters, internal behavior (as implemented in the source), important notes, usage examples, and edge cases.
 
