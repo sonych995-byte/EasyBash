@@ -7,7 +7,7 @@ import subprocess
 import shutil
 import glob
 from pathlib import Path
-from typing import List, Tuple, Dict, Callable
+from typing import List, Dict, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -106,7 +106,10 @@ class Executor:
             return 0
 
         try:
-            return subprocess.run(cmd, cwd=cwd).returncode
+            return subprocess.run(cmd, cwd=cwd, timeout=30).returncode
+        except subprocess.TimeoutExpired:
+            cprint("[ERROR] Command timed out", Color.RED)
+            return 1
         except Exception as e:
             cprint(f"[ERROR] {e}", Color.RED)
             return 1
@@ -116,16 +119,26 @@ class Executor:
         if not paths:
             cprint("[ERROR] No valid paths for parallel execution", Color.RED)
             return
+
+        success = 0
+        fail = 0
+
         with ThreadPoolExecutor(max_workers=8) as ex:
             futures = [ex.submit(self.run_cmd, cmd, p) for p in paths]
             for f in as_completed(futures):
-                f.result()
+                if f.result() == 0:
+                    success += 1
+                else:
+                    fail += 1
+
+        cprint(f"[SUMMARY] success={success}, fail={fail}", Color.CYAN)
 
     def chain(self, paths, cmd):
         paths = PathManager.filter_dirs(PathManager.expand_glob(paths))
         if not paths:
             cprint("[ERROR] No valid paths for chain execution", Color.RED)
             return
+
         for p in paths:
             cprint(f"[CHAIN] {p}", Color.BLUE)
             r = self.run_cmd(cmd, p)
@@ -151,11 +164,13 @@ class FileOps:
     @staticmethod
     def copy(src, dsts):
         src_path = Path(src)
+
         if not src_path.exists():
             cprint(f"[ERROR] Source not found: {src}", Color.RED)
-            return
+            return False
 
         success = True
+
         for d in dsts:
             try:
                 d = Path(FileOps._strip_quotes(d))
@@ -172,8 +187,11 @@ class FileOps:
     def move(src, dsts):
         success = FileOps.copy(src, dsts)
         if success:
-            Path(src).unlink()
-            cprint(f"[MOVE] removed {src}", Color.GREEN)
+            try:
+                Path(src).unlink()
+                cprint(f"[MOVE] removed {src}", Color.GREEN)
+            except Exception as e:
+                cprint(f"[ERROR] Failed to remove source: {e}", Color.RED)
         else:
             cprint("[MOVE] aborted due to copy failure", Color.RED)
 
@@ -206,10 +224,6 @@ class ForLoop:
         '{abs}': lambda p: shlex.quote(str(p.resolve())),
     }
 
-    @classmethod
-    def register_placeholder(cls, key: str, func: Callable[[Path], str]):
-        cls._placeholders[key] = func
-
     @staticmethod
     def _substitute_placeholders(command_template: str, path: Path) -> str:
         def replacer(match):
@@ -219,13 +233,11 @@ class ForLoop:
             cprint(f"[WARN] Unknown placeholder: {key}", Color.YELLOW)
             return key
 
-        pattern = re.compile(r'\{[^}]+\}')
-        return pattern.sub(replacer, command_template)
+        return re.sub(r'\{[^}]+\}', replacer, command_template)
 
     @staticmethod
     def _substitute_variable(command_template: str, var_name: str, quoted_path: str) -> str:
-        pattern = rf'\b{re.escape(var_name)}\b'
-        return re.sub(pattern, quoted_path, command_template)
+        return re.sub(rf'\b{re.escape(var_name)}\b', quoted_path, command_template)
 
     @staticmethod
     def run(var_name: str, pattern: str, command_template: str, executor: Executor):
@@ -309,7 +321,13 @@ class EasyBash:
         if not raw:
             return
 
-        if raw.startswith("help"):
+        tokens = shlex.split(raw)
+        if not tokens:
+            return
+
+        cmd = tokens[0]
+
+        if cmd == "help":
             return self.help(raw)
 
         if raw == "dry on":
@@ -321,30 +339,26 @@ class EasyBash:
             cprint("[DRY RUN OFF]", Color.YELLOW)
             return
 
-        if raw.startswith("copy"):
+        if cmd == "copy":
             return self.copy(raw)
-        if raw.startswith("move"):
+        if cmd == "move":
             return self.move(raw)
-        if raw.startswith("find"):
+        if cmd == "find":
             return self.find(raw)
 
-        if raw.startswith("for") and "=>" in raw:
+        if cmd == "for" and "=>" in raw:
             left, right = raw.split("=>", 1)
             tokens = shlex.split(left)
-            if len(tokens) != 4 or tokens[0] != "for" or tokens[2] != "in":
+            if len(tokens) != 4 or tokens[2] != "in":
                 cprint("[ERROR] Usage: for VAR in PATTERN => COMMAND", Color.RED)
                 return
             ForLoop.run(tokens[1], tokens[3], right.strip(), self.executor)
             return
 
-        tokens = shlex.split(raw)
-        if not tokens:
-            return
-
-        if '|' in tokens[0]:
-            self.executor.parallel(tokens[0].split('|'), tokens[1:])
-        elif '>' in tokens[0]:
-            self.executor.chain(tokens[0].split('>'), tokens[1:])
+        if '|' in cmd:
+            self.executor.parallel(cmd.split('|'), tokens[1:])
+        elif '>' in cmd:
+            self.executor.chain(cmd.split('>'), tokens[1:])
         else:
             self.executor.single(tokens)
 
@@ -356,7 +370,7 @@ class EasyBash:
 if __name__ == "__main__":
     eb = EasyBash()
 
-    cprint("EasyBash v6.1 🚀", Color.CYAN)
+    cprint("EasyBash v6.2 🚀", Color.CYAN)
 
     while True:
         try:
