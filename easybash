@@ -6,8 +6,9 @@ import shlex
 import subprocess
 import shutil
 import glob
+import hashlib
 from pathlib import Path
-from typing import List, Dict, Callable
+from typing import List, Dict, Callable, Tuple, Set
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -47,6 +48,11 @@ HELP = {
         "usage": "find PATTERN [ROOT]",
         "desc": "Find files recursively",
         "example": "find *.py ."
+    },
+    "finddup": {
+        "usage": "finddup [ROOT]",
+        "desc": "Find duplicate files (by content) and choose action",
+        "example": "finddup /home/user/docs"
     },
     "for": {
         "usage": "for VAR in PATTERN => COMMAND",
@@ -195,6 +201,33 @@ class FileOps:
         else:
             cprint("[MOVE] aborted due to copy failure", Color.RED)
 
+    @staticmethod
+    def delete_file(path: Path, dry_run: bool):
+        if dry_run:
+            cprint(f"[DRY-RUN] Would delete: {path}", Color.YELLOW)
+            return True
+        try:
+            path.unlink()
+            cprint(f"[DELETE] Removed: {path}", Color.GREEN)
+            return True
+        except Exception as e:
+            cprint(f"[ERROR] Could not delete {path}: {e}", Color.RED)
+            return False
+
+    @staticmethod
+    def move_file(src: Path, dst_dir: Path, dry_run: bool):
+        dst = dst_dir / src.name
+        if dry_run:
+            cprint(f"[DRY-RUN] Would move: {src} -> {dst}", Color.YELLOW)
+            return True
+        try:
+            shutil.move(str(src), str(dst))
+            cprint(f"[MOVE] Moved: {src} -> {dst}", Color.GREEN)
+            return True
+        except Exception as e:
+            cprint(f"[ERROR] Could not move {src} to {dst}: {e}", Color.RED)
+            return False
+
 
 # ============================================================================
 # Finder
@@ -209,6 +242,115 @@ class Finder:
         for r in results:
             cprint(f"[FIND] {r}", Color.CYAN)
         return results
+
+
+# ============================================================================
+# Duplicate Finder
+# ============================================================================
+
+class DuplicateFinder:
+    @staticmethod
+    def _hash_file(path: Path, chunk_size=8192) -> str:
+        """Compute MD5 hash of a file."""
+        hasher = hashlib.md5()
+        try:
+            with open(path, "rb") as f:
+                while chunk := f.read(chunk_size):
+                    hasher.update(chunk)
+            return hasher.hexdigest()
+        except (IOError, OSError) as e:
+            cprint(f"[WARN] Cannot read {path}: {e}", Color.YELLOW)
+            return ""
+
+    @staticmethod
+    def find_duplicates(root: Path) -> List[List[Path]]:
+        """Return list of duplicate file groups (each group has at least 2 files)."""
+        if not root.is_dir():
+            cprint(f"[ERROR] {root} is not a directory", Color.RED)
+            return []
+
+        # Step 1: group by file size (fast filter)
+        size_map: Dict[int, List[Path]] = {}
+        for file_path in root.rglob("*"):
+            if not file_path.is_file():
+                continue
+            try:
+                size = file_path.stat().st_size
+                size_map.setdefault(size, []).append(file_path)
+            except OSError:
+                continue
+
+        # Step 2: for each size group with more than one file, hash them
+        duplicates: Dict[str, List[Path]] = {}
+        for size, files in size_map.items():
+            if len(files) < 2:
+                continue
+            hash_map: Dict[str, List[Path]] = {}
+            for f in files:
+                h = DuplicateFinder._hash_file(f)
+                if h:
+                    hash_map.setdefault(h, []).append(f)
+            for h, group in hash_map.items():
+                if len(group) > 1:
+                    # Use (size, hash) as key to avoid collisions
+                    key = f"{size}:{h}"
+                    duplicates.setdefault(key, []).extend(group)
+
+        # Return only groups with >=2 files
+        return [group for group in duplicates.values() if len(group) >= 2]
+
+    @staticmethod
+    def interactive_handle_duplicates(duplicate_groups: List[List[Path]], dry_run: bool):
+        """For each group, ask user what to do: keep all, delete all but one, or move duplicates."""
+        if not duplicate_groups:
+            cprint("No duplicate files found.", Color.GREEN)
+            return
+
+        total_groups = len(duplicate_groups)
+        for idx, group in enumerate(duplicate_groups, 1):
+            cprint(f"\n--- Duplicate group {idx}/{total_groups} ---", Color.CYAN)
+            for i, f in enumerate(group):
+                cprint(f"  {i+1}. {f}", Color.BLUE)
+
+            # Show actions
+            cprint("\nOptions:", Color.YELLOW)
+            cprint("  [k] Keep all (do nothing)", Color.GREEN)
+            cprint("  [d] Delete duplicates (keep only the first file)", Color.RED)
+            cprint("  [m] Move duplicates to a folder", Color.BLUE)
+
+            while True:
+                choice = input("Your choice (k/d/m): ").strip().lower()
+                if choice in ('k', 'd', 'm'):
+                    break
+                cprint("Invalid choice. Please enter k, d, or m.", Color.RED)
+
+            if choice == 'k':
+                cprint("Keeping all files in this group.", Color.GREEN)
+                continue
+
+            elif choice == 'd':
+                # Keep the first file, delete all others
+                keep = group[0]
+                to_delete = group[1:]
+                cprint(f"Keeping: {keep}", Color.GREEN)
+                for f in to_delete:
+                    FileOps.delete_file(f, dry_run)
+
+            elif choice == 'm':
+                dest = input("Enter destination folder for duplicates: ").strip()
+                if not dest:
+                    cprint("No destination provided, skipping group.", Color.YELLOW)
+                    continue
+                dest_path = Path(dest).expanduser().resolve()
+                if not dry_run:
+                    dest_path.mkdir(parents=True, exist_ok=True)
+                keep = group[0]
+                to_move = group[1:]
+                cprint(f"Keeping: {keep}", Color.GREEN)
+                for f in to_move:
+                    FileOps.move_file(f, dest_path, dry_run)
+
+        cprint("\nDuplicate handling completed.", Color.GREEN)
 
 
 # ============================================================================
@@ -316,6 +458,18 @@ class EasyBash:
             return
         Finder.find(parts[1], parts[2] if len(parts) > 2 else ".")
 
+    def finddup(self, line):
+        parts = shlex.split(line)
+        root = parts[1] if len(parts) > 1 else "."
+        root_path = Path(root).expanduser().resolve()
+        if not root_path.is_dir():
+            cprint(f"[ERROR] '{root}' is not a valid directory", Color.RED)
+            return
+
+        cprint(f"Scanning for duplicates in: {root_path}", Color.CYAN)
+        duplicate_groups = DuplicateFinder.find_duplicates(root_path)
+        DuplicateFinder.interactive_handle_duplicates(duplicate_groups, self.executor.dry_run)
+
     def run(self, raw):
         raw = raw.strip()
         if not raw:
@@ -345,6 +499,8 @@ class EasyBash:
             return self.move(raw)
         if cmd == "find":
             return self.find(raw)
+        if cmd == "finddup":
+            return self.finddup(raw)
 
         if cmd == "for" and "=>" in raw:
             left, right = raw.split("=>", 1)
@@ -370,7 +526,7 @@ class EasyBash:
 if __name__ == "__main__":
     eb = EasyBash()
 
-    cprint("EasyBash v6.2 🚀", Color.CYAN)
+    cprint("EasyBash v6.3 🚀", Color.CYAN)
 
     while True:
         try:
