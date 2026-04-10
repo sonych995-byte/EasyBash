@@ -143,5 +143,24 @@ while True:
 4. Execute system commands
 5. Return output
 
+## EasyBash & Shell Compatibility
+EasyBash converts custom EasyBash commands into standard system shell commands before execution.
+### Important Behavior
+EasyBash does not directly execute commands itself.
+It relies on the operating system’s available shell to run the final output.
+### Compatibility
+## 💻 Compatibility
+
+| Environment | Result |
+|------------|--------|
+| Bash (Linux) | Fully supported |
+| Zsh (macOS / Linux) | Mostly compatible |
+| Termux | Fully supported |
+| Windows CMD | Not supported (requires conversion) |
+| PowerShell | Partially supported (needs adaptation or translation layer) |
+
+### Key Limitation
+EasyBash generates Bash-style commands, so it requires a compatible shell environment to execute correctly. If the system does not support Bash syntax, commands may fail unless additional translation support is implemented.
+
 ## version
 v2.0.0
