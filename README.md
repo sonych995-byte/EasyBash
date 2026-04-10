@@ -281,7 +281,7 @@ v6.1
 When you run EasyBash, you'll see:
 
 ```
-EasyBash v6.0 🚀
+EasyBash v6.1 🚀
 EasyBash>
 ```
 
