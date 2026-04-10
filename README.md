@@ -1,7 +1,60 @@
-# EasyBash v6.0
+# EasyBash v6.1
 
 ![python](https://img.shields.io/badge/python-3.8+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## 🆕 Updates (v6.1)
+
+### 1. Help System
+A built-in help system has been added to improve usability and make the CLI self-documenting.
+
+- `help`  
+  Displays all available commands with short descriptions.
+
+- `help <command>`  
+  Shows detailed usage, description, and an example for a specific command.
+
+This allows users to understand and use EasyBash without needing external documentation.
+
+---
+
+### 2. Safer Move Operation (Data Loss Prevention)
+The `move` command has been improved to prevent accidental data loss.
+
+- Files are only deleted from the source **after all copy operations succeed**.
+- If any copy operation fails, the original file is preserved.
+
+This ensures safer file handling and aligns with production-grade behavior.
+
+---
+
+### 3. Placeholder Warning System
+The `for` loop engine now detects unknown placeholders.
+
+- If an unrecognized placeholder is used (e.g. `{unknown}`), a warning is displayed.
+- Prevents silent failures and improves debugging.
+
+---
+
+### 4. Thread Limiting for Parallel Execution
+Parallel execution now uses a controlled number of threads.
+
+- `ThreadPoolExecutor` is limited with `max_workers=8`.
+- Prevents system overload when running commands across many paths.
+
+This improves stability and performance under heavy workloads.
+
+---
+
+### Summary
+This update focuses on:
+
+- Improving user experience (help system)
+- Increasing safety (move operation)
+- Enhancing debugging (placeholder warnings)
+- Ensuring stability (thread limits)
 
 ---
 
