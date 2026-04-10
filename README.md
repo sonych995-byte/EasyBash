@@ -45,7 +45,7 @@ chmod +x easybash
 python easybash.py
 ```
 
-Global Command Setup (Use Anywhere)
+## Global Command Setup (Use Anywhere)
 
 Make EasyBash accessible from any directory by installing the launcher script.
 
@@ -98,7 +98,7 @@ typing
 
 ---
 
-Commands
+## Commands
 
 1. for - Operate on a single file in multiple directories
 
@@ -152,7 +152,7 @@ help
 
 ---
 
-Notes
+## Notes
 
 · You can provide as many paths as you want using |:
   ```bash
@@ -167,7 +167,7 @@ Notes
 
 ---
 
-Why EasyBash?
+## Why EasyBash?
 
 EasyBash makes command-line workflows faster by:
 
