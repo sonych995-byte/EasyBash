@@ -177,7 +177,7 @@ When dry-run is ON, all commands are printed with [DRY-RUN] prefix but not execu
 
 ---
 
-##🌐 Compatibility
+## 🌐 Compatibility
 
 ### Platform Status
 - Linux ✅ Full
