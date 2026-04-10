@@ -149,7 +149,6 @@ EasyBash converts custom EasyBash commands into standard system shell commands b
 EasyBash does not directly execute commands itself.
 It relies on the operating system’s available shell to run the final output.
 ### Compatibility
-## 💻 Compatibility
 
 | Environment | Result |
 |------------|--------|
