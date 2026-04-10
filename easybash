@@ -7,6 +7,10 @@ import subprocess
 import shutil
 import glob
 import hashlib
+import stat
+import pwd
+import grp
+import datetime
 from pathlib import Path
 from typing import List, Dict, Callable, Tuple, Set
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -68,6 +72,11 @@ HELP = {
         "usage": "exit",
         "desc": "Exit EasyBash",
         "example": "exit"
+    },
+    "tree": {
+        "usage": "tree [PATH]",
+        "desc": "Display directory tree with detailed file info (size, permissions, owner, group, mtime)",
+        "example": "tree /home/user/docs"
     }
 }
 
@@ -410,6 +419,132 @@ class ForLoop:
 
 
 # ============================================================================
+# Tree Command (Detailed Directory Tree)
+# ============================================================================
+
+class TreeDisplay:
+    @staticmethod
+    def _mode_to_str(mode: int) -> str:
+        """Convert st_mode to permission string like 'rwxr-xr-x'."""
+        perms = []
+        for who in ("USR", "GRP", "OTH"):
+            for what in ("R", "W", "X"):
+                bit = getattr(stat, f"S_I{what}{who}", 0)
+                perms.append(what.lower() if mode & bit else "-")
+        return "".join(perms)
+
+    @staticmethod
+    def _get_file_info(path: Path) -> str:
+        """Return a compact string with file metadata."""
+        try:
+            st = path.lstat()  # do not follow symlinks
+            mode = st.st_mode
+            size = st.st_size
+            perms = TreeDisplay._mode_to_str(mode)
+
+            # owner and group names
+            try:
+                owner = pwd.getpwuid(st.st_uid).pw_name
+            except (KeyError, ImportError):
+                owner = str(st.st_uid)
+            try:
+                group = grp.getgrgid(st.st_gid).gr_name
+            except (KeyError, ImportError):
+                group = str(st.st_gid)
+
+            mtime = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+
+            info = f"size={size}, perms={perms}, owner={owner}, group={group}, modified={mtime}"
+
+            if path.is_symlink():
+                try:
+                    target = os.readlink(path)
+                except OSError:
+                    target = "?"
+                info = f"link -> {target}, {info}"
+
+            return f"[{info}]"
+        except Exception as e:
+            return f"[error: {e}]"
+
+    @staticmethod
+    def _tree_lines(path: Path, prefix: str = "", is_last: bool = True) -> List[str]:
+        """Recursively build tree lines for a given path."""
+        lines = []
+        # current node
+        node_name = path.name if path.name else str(path)  # root case
+        if path.is_symlink():
+            node_name += "@"
+        elif path.is_dir():
+            node_name += "/"
+
+        info = TreeDisplay._get_file_info(path)
+        connector = "└── " if is_last else "├── "
+        lines.append(f"{prefix}{connector}{node_name} {info}")
+
+        if path.is_dir() and not path.is_symlink():  # do not descend into symlink directories
+            try:
+                children = list(path.iterdir())
+            except PermissionError:
+                lines.append(f"{prefix}{'    ' if is_last else '│   '}[Permission denied]")
+                return lines
+
+            # sort: directories first (real dirs only), then symlinks, then regular files
+            def sort_key(p: Path):
+                if p.is_dir() and not p.is_symlink():
+                    return (0, p.name.lower())
+                elif p.is_symlink():
+                    return (1, p.name.lower())
+                else:
+                    return (2, p.name.lower())
+
+            children.sort(key=sort_key)
+            for i, child in enumerate(children):
+                is_last_child = (i == len(children) - 1)
+                new_prefix = prefix + ("    " if is_last else "│   ")
+                lines.extend(TreeDisplay._tree_lines(child, new_prefix, is_last_child))
+        return lines
+
+    @staticmethod
+    def display(root: Path):
+        """Print the tree starting at root."""
+        if not root.exists():
+            cprint(f"[ERROR] Path does not exist: {root}", Color.RED)
+            return
+
+        # Print root line without connector
+        root_name = root.name if root.name else str(root)
+        if root.is_symlink():
+            root_name += "@"
+        elif root.is_dir():
+            root_name += "/"
+        info = TreeDisplay._get_file_info(root)
+        print(f"{root_name} {info}")
+
+        if root.is_dir() and not root.is_symlink():
+            try:
+                children = list(root.iterdir())
+            except PermissionError:
+                cprint("[Permission denied]", Color.YELLOW)
+                return
+
+            def sort_key(p: Path):
+                if p.is_dir() and not p.is_symlink():
+                    return (0, p.name.lower())
+                elif p.is_symlink():
+                    return (1, p.name.lower())
+                else:
+                    return (2, p.name.lower())
+            children.sort(key=sort_key)
+
+            for i, child in enumerate(children):
+                is_last = (i == len(children) - 1)
+                lines = TreeDisplay._tree_lines(child, "", is_last)
+                for line in lines:
+                    print(line)
+
+
+# ============================================================================
 # Main EasyBash
 # ============================================================================
 
@@ -470,6 +605,13 @@ class EasyBash:
         duplicate_groups = DuplicateFinder.find_duplicates(root_path)
         DuplicateFinder.interactive_handle_duplicates(duplicate_groups, self.executor.dry_run)
 
+    def tree(self, line):
+        """Execute 'tree' command."""
+        parts = shlex.split(line)
+        root = parts[1] if len(parts) > 1 else "."
+        path = Path(root).expanduser().resolve()
+        TreeDisplay.display(path)
+
     def run(self, raw):
         raw = raw.strip()
         if not raw:
@@ -501,6 +643,8 @@ class EasyBash:
             return self.find(raw)
         if cmd == "finddup":
             return self.finddup(raw)
+        if cmd == "tree":
+            return self.tree(raw)
 
         if cmd == "for" and "=>" in raw:
             left, right = raw.split("=>", 1)
