@@ -1,16 +1,13 @@
-# 📦 EasyBash
+# EasyBash v3.2
 
-![Python](https://img.shields.io/badge/python-3.8+-blue)
+![python](https://img.shields.io/badge/python-3.8+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-active-success)
 
 ---
 
 ## 📌 Description
 
-EasyBash is a Python CLI tool that simplifies shell workflows by adding higher-level commands for file management, batch automation, and multi-directory execution.
-
-It acts as a productivity layer over traditional shell commands.
+EasyBash is a Python CLI tool that simplifies shell workflows by adding parallel and sequential execution across multiple directories, plus simple file copy/move/find commands.
 
 ---
 
@@ -34,11 +31,9 @@ chmod +x easybash
 
 ## 🚀 Run
 
-`python easybash.py`
-
-Or run from path:
-
-python /path/to/easybash.py
+```bash
+python easybash.py
+```
 
 ---
 
@@ -68,164 +63,163 @@ mv easybash $PREFIX/bin/
 
 ## ⚙️ Commands
 
-### 🔁 for
-Run command across multiple directories.
+### 🔁 for – Run a command in multiple directories
 
-Syntax:
 ```bash
-for <file_pattern> in <path1|path2> <command>
+for ITEM in PATH1|PATH2|PATH3... COMMAND...
 ```
 
 Example:
+
 ```bash
-for *.py in src|tests python {}
+for f in src|tests|docs ls -la
 ```
 
 ---
 
-### ⚡ rush
-Run commands in parallel directories.
+### ⚡ Parallel execution (|) – Run same command in multiple directories concurrently
 
-Syntax:
 ```bash
-rush <path1|path2> <command>
+PATH1|PATH2|PATH3... COMMAND...
 ```
 
 Example:
+
 ```bash
-rush src|tests git status
+src|tests|docs git status
 ```
 
 ---
 
-### 📁 copy
-Copy files by pattern.
+### 🔗 Chain execution (>) – Run command sequentially across directories, stop on failure
 
-Syntax:
 ```bash
-copy <pattern> to <dest1|dest2> <mode>
+PATH1>PATH2>PATH3... COMMAND...
 ```
 
-Modes:
-dir  -> copy into each folder
-flat -> copy into single folder
-
 Example:
+
 ```bash
-copy *.log to backup|archive dir
+dir1>dir2>dir3 ls -la
 ```
 
 ---
 
-### 📦 move
-Move files safely (copy then delete).
+### 📁 copy – Copy a file to multiple destinations
 
-Syntax:
 ```bash
-move <pattern> to <dest1|dest2> <mode>
+copy SRC to DST1|DST2|DST3...
 ```
 
 Example:
+
 ```bash
-move *.tmp to logs|archive flat
+copy report.txt to backup|archive|external
+```
+
+Paths with spaces? Use quotes:
+
+```bash
+copy "my file.txt" to "my folder"|"another folder"
 ```
 
 ---
 
-### 🔍 find
-Search files recursively.
+### 📦 move – Move a file (copy + delete source)
 
-Syntax:
 ```bash
-find <pattern> in <path1|path2>
+move SRC to DST1|DST2|DST3...
 ```
 
 Example:
+
 ```bash
-find *.py in src|lib
+move data.csv to processed|archive
 ```
 
 ---
 
-### 📜 batch
-Execute commands from file.
+### 🔍 find – Search files recursively
 
-Syntax:
 ```bash
-batch <file>
+find PATTERN [ROOT]
 ```
 
-Example:
+If ROOT is omitted, searches current directory (.).
+
+Examples:
+
 ```bash
-batch commands.txt
+find *.log
+find *.py ./src
 ```
+
+---
+
+### 🧪 Dry‑run mode – Preview commands without executing
+
+```bash
+dry on
+dry off
+```
+
+When dry-run is ON, all commands are printed with [DRY-RUN] prefix but not executed.
 
 ---
 
 ## 🧠 How it works
 
-1. Parse command
-2. Expand paths
-3. Execute via subprocess
-4. Return output
+1. Parse command line
+2. Expand glob patterns (*, ?, [])
+3. Validate that paths exist
+4. Execute via subprocess.run() in the specified directory
+5. Show colored output
 
 ---
 
-## 🧩 Architecture
+##🌐 Compatibility
 
-- CommandParser
-- PathManager
-- CommandExecutor
-
----
-
-## 🌐 Compatibility
-
-- Linux     -> full support
-- macOS     -> full support
-- Termux    -> full support
-- Windows   -> partial (needs .bat)
-- PowerShell-> partial
-
----
-
-## 🔒 Safety
-
-- move only deletes after success
-- batch uses trusted files only
-- parallel execution is limited
-- recursion is controlled
+### Platform Status
+- Linux ✅ Full
+- macOS ✅ Full
+- Termux ✅ Full
+- Windows ⚠️ Partial (needs Python + terminal)
 
 ---
 
 ## 📦 Version
 
-v3.2.0
+v3.2 – Improved parsing, dry-run toggle, parallel + chain execution, quote handling
 
 ---
 
-# EasyBash v3.2 – Improvements
+## 📝 Examples (startup help)
 
-## New Features
-- Chain execution (`>`): run commands sequentially across directories, stop on failure  
-  `dir1>dir2>dir3 ls -la`
-- Parallel execution (`|`): replaces `rush` – run commands concurrently  
-  `src|tests|docs git status`
-- Interactive dry-run toggle: `dry on` / `dry off`
-- Simpler copy/move syntax: `copy file.txt to dest1|dest2|dest3`
-- Automatic quote stripping for paths with spaces
-- Inline help on startup (examples displayed)
+When you run EasyBash, you’ll see:
 
-## Fixed Issues
-| Original (v3.0) | Improved (v3.2) |
-|----------------|----------------|
-| Quotes in paths caused parsing errors | Proper quote handling with `shlex.split()` + `_strip_quotes()` |
-| Dry-run only via environment variable | Real-time `dry on`/`off` commands |
-| Complex `for` with `{}` replacement | Simplified `for` on directories |
-| Separate `rush` command | Unified `path1\|path2` syntax for parallelism |
+```
+EasyBash v3.2 (Improved)
+Type 'exit' to quit
+Examples:
+  copy report.txt to backup|archive
+  move data.csv to processed|archive
+  find '*.log' ./logs
+  for f in dir1|dir2 ls -la
+  dir1|dir2 ls -la         (parallel)
+  dir1>dir2>dir3 ls -la    (chain)
+```
 
-## Removed Features (for simplicity)
-- `batch` command (execute from file)
-- `flat` mode in copy/move
-- Command history, signal handler, batch depth limit
-- Environment variables (`EASYBASH_VERBOSE`, `EASYBASH_MAX_WORKERS`)
+---
+
+## ⚠️ Notes
+
+- for loop currently ignores the ITEM variable (no {} replacement). It simply runs the command inside each directory.
+- Parallel execution uses ThreadPoolExecutor – commands run concurrently, not in true parallel processes.
+- Chain stops at the first directory where the command returns a non‑zero exit code.
+- Always quote paths or patterns that contain spaces or special characters.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
