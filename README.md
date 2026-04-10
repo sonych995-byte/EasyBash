@@ -24,16 +24,17 @@ It acts as a productivity layer over traditional shell commands.
 ---
 
 ## 📥 Installation
-
+```bash
 git clone https://github.com/sonych995-byte/EasyBash.git
 cd EasyBash
 chmod +x easybash
+```
 
 ---
 
 ## 🚀 Run
 
-python easybash.py
+`python easybash.py`
 
 Or run from path:
 
@@ -44,18 +45,24 @@ python /path/to/easybash.py
 ## 🌍 Global Setup
 
 Linux / macOS:
+```bash
 chmod +x easybash
 sudo mv easybash /usr/local/bin/
+```
 
 Windows:
+```bash
 @echo off
 python C:\path\to\easybash.py %*
+```
 
 (Add to PATH)
 
 Termux:
+```bash
 chmod +x easybash
 mv easybash $PREFIX/bin/
+```
 
 ---
 
@@ -65,10 +72,14 @@ mv easybash $PREFIX/bin/
 Run command across multiple directories.
 
 Syntax:
+```bash
 for <file_pattern> in <path1|path2> <command>
+```
 
 Example:
+```bash
 for *.py in src|tests python {}
+```
 
 ---
 
@@ -76,10 +87,14 @@ for *.py in src|tests python {}
 Run commands in parallel directories.
 
 Syntax:
+```bash
 rush <path1|path2> <command>
+```
 
 Example:
+```bash
 rush src|tests git status
+```
 
 ---
 
@@ -87,14 +102,18 @@ rush src|tests git status
 Copy files by pattern.
 
 Syntax:
+```bash
 copy <pattern> to <dest1|dest2> <mode>
+```
 
 Modes:
 dir  -> copy into each folder
 flat -> copy into single folder
 
 Example:
+```bash
 copy *.log to backup|archive dir
+```
 
 ---
 
@@ -102,10 +121,14 @@ copy *.log to backup|archive dir
 Move files safely (copy then delete).
 
 Syntax:
+```bash
 move <pattern> to <dest1|dest2> <mode>
+```
 
 Example:
+```bash
 move *.tmp to logs|archive flat
+```
 
 ---
 
@@ -113,10 +136,14 @@ move *.tmp to logs|archive flat
 Search files recursively.
 
 Syntax:
+```bash
 find <pattern> in <path1|path2>
+```
 
 Example:
+```bash
 find *.py in src|lib
+```
 
 ---
 
@@ -124,10 +151,14 @@ find *.py in src|lib
 Execute commands from file.
 
 Syntax:
+```bash
 batch <file>
+```
 
 Example:
+```bash
 batch commands.txt
+```
 
 ---
 
