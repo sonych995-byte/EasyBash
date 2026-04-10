@@ -200,33 +200,32 @@ PowerShell-> partial
 
 ## 📦 Version
 
-v3.0.0
+v3.2.0
 
 ---
 
-## 🔥 Update Notes
+# EasyBash v3.2 – Improvements
 
-Added:
-- parallel execution
-- batch system
-- recursive search
-- safe move
+## New Features
+- Chain execution (`>`): run commands sequentially across directories, stop on failure  
+  `dir1>dir2>dir3 ls -la`
+- Parallel execution (`|`): replaces `rush` – run commands concurrently  
+  `src|tests|docs git status`
+- Interactive dry-run toggle: `dry on` / `dry off`
+- Simpler copy/move syntax: `copy file.txt to dest1|dest2|dest3`
+- Automatic quote stripping for paths with spaces
+- Inline help on startup (examples displayed)
 
-Fixed:
-- file loss bug
-- thread race condition
-- unicode batch issue
+## Fixed Issues
+| Original (v3.0) | Improved (v3.2) |
+|----------------|----------------|
+| Quotes in paths caused parsing errors | Proper quote handling with `shlex.split()` + `_strip_quotes()` |
+| Dry-run only via environment variable | Real-time `dry on`/`off` commands |
+| Complex `for` with `{}` replacement | Simplified `for` on directories |
+| Separate `rush` command | Unified `path1\|path2` syntax for parallelism |
 
-Improved:
-- performance
-- error handling
-- stability
-
----
-
-## 💡 Tips
-
-- Use {} as file placeholder
-- Use | to separate paths
-- Combine with shell commands
-- Use batch for automation
+## Removed Features (for simplicity)
+- `batch` command (execute from file)
+- `flat` mode in copy/move
+- Command history, signal handler, batch depth limit
+- Environment variables (`EASYBASH_VERBOSE`, `EASYBASH_MAX_WORKERS`)
