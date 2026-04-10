@@ -272,7 +272,7 @@ When dry-run is ON, all commands are printed with `[DRY-RUN]` prefix but not exe
 
 ## 📦 Version
 
-v6.0
+v6.1
 
 ---
 
