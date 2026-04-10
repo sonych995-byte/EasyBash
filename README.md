@@ -181,11 +181,11 @@ batch commands.txt
 
 ## 🌐 Compatibility
 
-Linux     -> full support
-macOS     -> full support
-Termux    -> full support
-Windows   -> partial (needs .bat)
-PowerShell-> partial
+- Linux     -> full support
+- macOS     -> full support
+- Termux    -> full support
+- Windows   -> partial (needs .bat)
+- PowerShell-> partial
 
 ---
 
