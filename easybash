@@ -29,6 +29,44 @@ def cprint(text, color=Color.RESET):
 
 
 # ============================================================================
+# Help System
+# ============================================================================
+
+HELP = {
+    "copy": {
+        "usage": "copy SRC to DST1|DST2",
+        "desc": "Copy file to one or more destinations",
+        "example": "copy a.txt to backup/|test/"
+    },
+    "move": {
+        "usage": "move SRC to DST1|DST2",
+        "desc": "Move file to destinations",
+        "example": "move a.txt to backup/"
+    },
+    "find": {
+        "usage": "find PATTERN [ROOT]",
+        "desc": "Find files recursively",
+        "example": "find *.py ."
+    },
+    "for": {
+        "usage": "for VAR in PATTERN => COMMAND",
+        "desc": "Loop over matched files",
+        "example": "for f in *.py => echo {}"
+    },
+    "dry": {
+        "usage": "dry on|off",
+        "desc": "Enable or disable dry-run mode",
+        "example": "dry on"
+    },
+    "exit": {
+        "usage": "exit",
+        "desc": "Exit EasyBash",
+        "example": "exit"
+    }
+}
+
+
+# ============================================================================
 # Path Manager
 # ============================================================================
 
@@ -78,7 +116,7 @@ class Executor:
         if not paths:
             cprint("[ERROR] No valid paths for parallel execution", Color.RED)
             return
-        with ThreadPoolExecutor() as ex:
+        with ThreadPoolExecutor(max_workers=8) as ex:
             futures = [ex.submit(self.run_cmd, cmd, p) for p in paths]
             for f in as_completed(futures):
                 f.result()
@@ -116,17 +154,28 @@ class FileOps:
         if not src_path.exists():
             cprint(f"[ERROR] Source not found: {src}", Color.RED)
             return
+
+        success = True
         for d in dsts:
-            d = Path(FileOps._strip_quotes(d))
-            target = d / src_path.name if d.is_dir() else d
-            shutil.copy2(src_path, target)
-            cprint(f"[COPY] {src} -> {target}", Color.GREEN)
+            try:
+                d = Path(FileOps._strip_quotes(d))
+                target = d / src_path.name if d.is_dir() else d
+                shutil.copy2(src_path, target)
+                cprint(f"[COPY] {src} -> {target}", Color.GREEN)
+            except Exception as e:
+                success = False
+                cprint(f"[ERROR] Copy failed: {e}", Color.RED)
+
+        return success
 
     @staticmethod
     def move(src, dsts):
-        FileOps.copy(src, dsts)
-        Path(src).unlink()
-        cprint(f"[MOVE] removed {src}", Color.GREEN)
+        success = FileOps.copy(src, dsts)
+        if success:
+            Path(src).unlink()
+            cprint(f"[MOVE] removed {src}", Color.GREEN)
+        else:
+            cprint("[MOVE] aborted due to copy failure", Color.RED)
 
 
 # ============================================================================
@@ -167,6 +216,7 @@ class ForLoop:
             key = match.group(0)
             if key in ForLoop._placeholders:
                 return ForLoop._placeholders[key](path)
+            cprint(f"[WARN] Unknown placeholder: {key}", Color.YELLOW)
             return key
 
         pattern = re.compile(r'\{[^}]+\}')
@@ -213,6 +263,26 @@ class EasyBash:
     def __init__(self):
         self.executor = Executor()
 
+    def help(self, line):
+        parts = shlex.split(line)
+
+        if len(parts) == 1:
+            cprint("Available commands:", Color.CYAN)
+            for cmd in HELP:
+                cprint(f"  {cmd} - {HELP[cmd]['desc']}", Color.GREEN)
+            cprint("Use: help <command>", Color.YELLOW)
+            return
+
+        cmd = parts[1]
+        if cmd in HELP:
+            info = HELP[cmd]
+            cprint(f"{cmd}", Color.CYAN)
+            cprint(f"Usage: {info['usage']}", Color.GREEN)
+            cprint(f"Description: {info['desc']}", Color.BLUE)
+            cprint(f"Example: {info['example']}", Color.YELLOW)
+        else:
+            cprint(f"[ERROR] No help for '{cmd}'", Color.RED)
+
     def copy(self, line):
         parts = shlex.split(line)
         if len(parts) < 4 or parts[2] != 'to':
@@ -238,6 +308,9 @@ class EasyBash:
         raw = raw.strip()
         if not raw:
             return
+
+        if raw.startswith("help"):
+            return self.help(raw)
 
         if raw == "dry on":
             self.executor.dry_run = True
@@ -283,7 +356,7 @@ class EasyBash:
 if __name__ == "__main__":
     eb = EasyBash()
 
-    cprint("EasyBash v6.0 🚀", Color.CYAN)
+    cprint("EasyBash v6.1 🚀", Color.CYAN)
 
     while True:
         try:
