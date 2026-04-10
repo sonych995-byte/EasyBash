@@ -1,4 +1,4 @@
-# EasyBash v3.2
+# EasyBash v6.0
 
 ![python](https://img.shields.io/badge/python-3.8+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -189,7 +189,7 @@ When dry-run is ON, all commands are printed with [DRY-RUN] prefix but not execu
 
 ## 📦 Version
 
-v3.2 – Improved parsing, dry-run toggle, parallel + chain execution, quote handling
+v6.0
 
 ---
 
@@ -211,12 +211,39 @@ Examples:
 
 ---
 
-## ⚠️ Notes
+# 🚀 EasyBash v6.0
 
-- for loop currently ignores the ITEM variable (no {} replacement). It simply runs the command inside each directory.
-- Parallel execution uses ThreadPoolExecutor – commands run concurrently, not in true parallel processes.
-- Chain stops at the first directory where the command returns a non‑zero exit code.
-- Always quote paths or patterns that contain spaces or special characters.
+## 🔥 Major Upgrade
+
+This version introduces a complete redesign of the `for` loop system, adds an advanced placeholder engine, improves safety, and makes EasyBash installable as a CLI tool.
+
+---
+
+## ✨ New Features
+
+### 🧠 Advanced For Loop System
+- Fully redesigned `for` command
+- Supports glob patterns with recursive matching (`**`)
+- Improved error handling and stability
+
+---
+
+### 🧩 Placeholder System (NEW)
+
+Support powerful placeholders:
+
+| Placeholder | Description |
+|------------|------------|
+| `{}`   | Full path |
+| `{/}`  | Filename |
+| `{.}`  | Filename without extension |
+| `{..}` | Parent folder |
+| `{abs}`| Absolute path |
+
+Example:
+```bash
+for f in *.txt => copy {} backup/{/}
+```
 
 ---
 
