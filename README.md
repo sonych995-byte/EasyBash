@@ -41,6 +41,7 @@ EasyBash separates commands into two main categories:
 
 ```bash
 git clone https://github.com/sonych995-byte/EasyBash.git
+chmod +x easybash
 python easybash.py
 ```
 
