@@ -1,7 +1,66 @@
-# EasyBash v6.2
+# EasyBash v6.3
 
 ![python](https://img.shields.io/badge/python-3.8+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## 🆕 Updates (v6.3)
+
+### 1. New Command: `finddup` – Duplicate File Detection and Cleanup
+
+A new `finddup` command has been added for finding and handling duplicate files.
+
+- Scans a directory recursively for files with identical content
+- Detection uses a two-stage approach: group by file size first (fast), then verify by MD5 hash (accurate)
+- Each group of confirmed duplicates is presented interactively; for each group the user may:
+  - **`k`** – Keep all files (do nothing)
+  - **`d`** – Delete duplicates, keeping only the first file in the group
+  - **`m`** – Move duplicates to a destination folder (folder is created automatically)
+- Respects dry-run mode: delete and move operations print `[DRY-RUN]` messages and are not executed when `dry on` is active
+- Two new internal helpers added to `FileOps`: `delete_file()` and `move_file()`, both accepting a `dry_run` parameter
+
+```bash
+finddup               # scan current directory
+finddup /home/user/docs
+```
+
+---
+
+### 2. New Command: `tree` – Detailed Directory Tree
+
+A new `tree` command has been added for visualizing directory structure with full file metadata.
+
+- Prints a recursive tree with `├──` / `└──` connectors (consistent with standard `tree(1)` style)
+- Each entry displays inline metadata: `size`, `perms`, `owner`, `group`, and `modified` timestamp
+- Symlinks are marked with `@` and show their link target; symlink directories are not descended into (prevents infinite loops from circular links)
+- Entries are sorted within each directory: real directories → symlinks → regular files, each group alphabetically
+- Permission string formatted as 9 characters (`rwxr-xr-x`), covering user/group/other
+- Gracefully handles unreadable directories with a `[Permission denied]` notice
+
+```bash
+tree               # tree of current directory
+tree /home/user/docs
+```
+
+---
+
+### 3. Extended Dry-Run Support
+
+Dry-run mode now covers `finddup` file operations in addition to the existing shell-command scope.
+
+- `finddup` delete and move operations are suppressed when `dry on` is active
+- `copy`, `move`, `find`, and `tree` remain unaffected by dry-run (as before)
+
+---
+
+### Summary
+
+v6.3 focuses on expanding built-in file management capabilities:
+
+- **Duplicate detection** (`finddup`) — content-aware, interactive, dry-run-safe
+- **Directory inspection** (`tree`) — metadata-rich recursive view
+- **Dry-run coverage** extended to `finddup` file operations
 
 ---
 
@@ -294,6 +353,56 @@ find *.py ./src
 
 ---
 
+### 🔎 finddup – Find and handle duplicate files
+
+```bash
+finddup [ROOT]
+```
+
+Scans `ROOT` (defaults to `.`) recursively for files with identical content. Files are first grouped by size, then verified by MD5 hash to confirm true duplicates. After scanning, each duplicate group is presented interactively with three options:
+
+- **`k`** – Keep all files in the group (do nothing)
+- **`d`** – Delete all duplicates, keeping only the first file in the group
+- **`m`** – Move duplicates to a folder you specify (destination is created automatically)
+
+Respects dry-run mode: when `dry on` is active, deletions and moves are printed but not executed.
+
+Examples:
+
+```bash
+finddup
+finddup /home/user/docs
+```
+
+---
+
+### 🌳 tree – Display a detailed directory tree
+
+```bash
+tree [PATH]
+```
+
+Prints a recursive directory tree starting at `PATH` (defaults to `.`). Each entry shows the following metadata inline:
+
+| Field | Description |
+|-------|-------------|
+| `size` | File size in bytes |
+| `perms` | Permission string (e.g. `rwxr-xr-x`) |
+| `owner` | Owning user name |
+| `group` | Owning group name |
+| `modified` | Last modification timestamp (`YYYY-MM-DD HH:MM:SS`) |
+
+Directories are listed before symlinks, which are listed before regular files. Symlinks are marked with `@` and display their link target. Directories are marked with `/`. Descends into real directories only; symlink directories are not followed.
+
+Examples:
+
+```bash
+tree
+tree /home/user/docs
+```
+
+---
+
 ### 🧪 Dry‑run mode – Preview commands without executing
 
 ```bash
@@ -301,7 +410,7 @@ dry on
 dry off
 ```
 
-When dry-run is **ON**, all commands are printed with a `[DRY-RUN]` prefix but not executed. File operations (`copy`, `move`) and shell commands (parallel, chain, for) are all affected. Use this to safely verify what will happen before running for real.
+When dry-run is **ON**, all commands are printed with a `[DRY-RUN]` prefix but not executed. Shell commands (parallel, chain, for) and `finddup` file operations (delete/move) are all affected. `copy`, `move`, and `find` are not affected. Use this to safely verify what will happen before running for real.
 
 ---
 
@@ -338,7 +447,7 @@ Exits the EasyBash interactive session. You can also press `Ctrl+C` at any time 
 
 ## 📦 Version
 
-v6.2
+v6.3
 
 ---
 
@@ -347,7 +456,7 @@ v6.2
 When you run EasyBash, you'll see:
 
 ```
-EasyBash v6.2 🚀
+EasyBash v6.3 🚀
 EasyBash>
 ```
 
@@ -359,6 +468,8 @@ help copy                      # show help for a specific command
 copy report.txt to backup|archive
 move data.csv to processed|archive
 find *.log ./logs
+finddup /home/user/docs        # find and handle duplicate files
+tree /home/user/docs           # display directory tree with file info
 for f in *.txt => echo f
 for f in *.py => python {abs}
 src|tests|docs git status      # parallel (up to 8 threads)
@@ -566,6 +677,131 @@ find data_*.csv ./datasets
 
 ---
 
+### finddup
+
+**Description**
+
+Scans a directory recursively for files with identical content. Duplicate detection is performed in two stages: files are first grouped by size (fast), then by MD5 hash (accurate). Each group of confirmed duplicates is presented interactively, allowing the user to keep, delete, or relocate the duplicates.
+
+**Syntax**
+
+```
+finddup [ROOT]
+```
+
+**Parameters**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `ROOT` | No | The root directory to scan. Defaults to `.` (current directory) if omitted. The path is resolved to an absolute path before scanning. |
+
+**Behavior**
+
+1. The input line is tokenized with `shlex.split()`. If a second token is present it is used as `ROOT`; otherwise `.` is used.
+2. `ROOT` is resolved with `Path.expanduser().resolve()`. If the resolved path is not a directory, an error is printed and the command aborts.
+3. `DuplicateFinder.find_duplicates()` scans `ROOT` recursively:
+   - All files are grouped by byte size (`st_size`). Size groups with fewer than 2 files are discarded.
+   - For each remaining size group, each file is hashed with MD5 (reading in 8 192-byte chunks). Files that cannot be read emit a yellow `[WARN]` and are skipped.
+   - Files sharing both size and MD5 hash are collected into a duplicate group. Only groups of 2 or more are returned.
+4. `DuplicateFinder.interactive_handle_duplicates()` presents each group in turn. For each group the user chooses:
+   - **`k`** – Keep all. No action taken.
+   - **`d`** – Delete duplicates. The first file in the group is kept; all others are deleted via `FileOps.delete_file()`.
+   - **`m`** – Move duplicates. The user enters a destination folder path. The first file is kept in place; all others are moved via `FileOps.move_file()`. The destination folder is created if it does not exist (unless dry-run is active).
+5. Respects dry-run mode: `FileOps.delete_file()` and `FileOps.move_file()` print `[DRY-RUN]` messages and skip actual filesystem operations when `executor.dry_run` is `True`.
+
+**Notes**
+
+- MD5 is used for speed, not cryptographic security. The probability of a false positive collision between two different files is negligible for practical use cases.
+- The first file in each group is always kept regardless of the chosen action. The order within a group is determined by `rglob()` traversal order, which is not guaranteed to be alphabetical or by modification time.
+- If no duplicates are found, a green `No duplicate files found.` message is printed and the command exits immediately.
+- Unlike `copy` and `move`, `finddup` does respect dry-run mode for its internal file operations.
+
+**Examples**
+
+```bash
+# Scan the current directory
+finddup
+
+# Scan a specific directory
+finddup /home/user/docs
+
+# Preview what would be deleted without making changes
+dry on
+finddup /home/user/docs
+dry off
+```
+
+**Edge Cases**
+
+- Files that cannot be read (e.g., permission denied) are skipped with a warning and excluded from duplicate groups.
+- An invalid choice at the interactive prompt (`k`, `d`, or `m` only) causes the prompt to repeat until a valid answer is given.
+- If the user provides an empty destination when choosing `m`, the group is skipped with a yellow warning.
+- Providing a path to a file (rather than a directory) produces an error.
+
+---
+
+### tree
+
+**Description**
+
+Displays a recursive visual directory tree rooted at a given path. Each entry is annotated with detailed file metadata: size, permission bits, owner, group, and last-modification timestamp. Symlinks are identified and their targets shown. Directories are not followed through symlinks.
+
+**Syntax**
+
+```
+tree [PATH]
+```
+
+**Parameters**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `PATH` | No | Root path for the tree. Defaults to `.` (current directory) if omitted. Resolved via `Path.expanduser().resolve()`. |
+
+**Behavior**
+
+1. The input line is tokenized with `shlex.split()`. If a second token is present it is used as `PATH`; otherwise `.` is used.
+2. `PATH` is resolved to an absolute path. If it does not exist, an error is printed and the command aborts.
+3. `TreeDisplay.display()` prints the root node with its metadata, then recursively prints all children using `TreeDisplay._tree_lines()`.
+4. Within each directory, entries are sorted: real directories first, then symlinks, then regular files. Each tier is sorted alphabetically (case-insensitive).
+5. Symlink directories are **not** descended into, preventing infinite loops from circular links.
+6. If a directory cannot be listed (e.g., permission denied), a `[Permission denied]` notice is printed in place of its children.
+7. Each node line includes inline metadata in the format:
+
+```
+[size=N, perms=rwxr-xr-x, owner=user, group=group, modified=YYYY-MM-DD HH:MM:SS]
+```
+
+Symlink entries additionally include `link -> TARGET` before the other fields.
+
+**Notes**
+
+- Metadata is read with `Path.lstat()` (does not follow symlinks), so symlink entries reflect the link itself, not the target.
+- Owner and group names are resolved via `pwd` and `grp` modules. On systems where resolution fails, the numeric UID/GID is used instead.
+- Permission bits are formatted as a 9-character string (`rwxrwxrwx`) covering user, group, and other, matching the output style of `ls -l`. The leading type character (e.g., `d` for directory) is not included.
+- The tree uses `├──` and `└──` connectors with `│` continuation lines, consistent with the standard `tree(1)` utility style.
+
+**Examples**
+
+```bash
+# Display tree of the current directory
+tree
+
+# Display tree of a specific path
+tree /home/user/docs
+
+# Display tree of the root directory (may be large)
+tree /
+```
+
+**Edge Cases**
+
+- If `PATH` does not exist, a red `[ERROR] Path does not exist: PATH` is printed and the command returns without output.
+- On a system where `pwd` or `grp` modules are unavailable (e.g., minimal environments), numeric IDs are displayed instead of names.
+- Very deep or large directory trees will produce proportionally long output. There is no depth limit.
+
+---
+
 ### for
 
 **Description**
@@ -689,11 +925,13 @@ Dry-run affects all commands routed through `Executor.run_cmd()`:
 | Chain execution (`>`) | Yes |
 | `for` loop body | Yes |
 | Single shell command | Yes |
+| `finddup` (delete/move operations) | Yes |
 | `copy` | No |
 | `move` | No |
 | `find` | No |
+| `tree` | No |
 
-`copy`, `move`, and `find` use their own internal Python implementations (`shutil`, `pathlib`) and are not routed through `Executor`, so they are not suppressed by dry-run mode.
+`copy`, `move`, and `find` use their own internal Python implementations (`shutil`, `pathlib`) and are not routed through `Executor`, so they are not suppressed by dry-run mode. `finddup` is a special case: its internal `FileOps.delete_file()` and `FileOps.move_file()` helpers accept the `dry_run` flag directly, so deletions and moves are suppressed when dry-run is active. `tree` is read-only and unaffected by dry-run.
 
 **Notes**
 
@@ -765,9 +1003,11 @@ The following commands have registered help entries:
 | `copy` | Yes |
 | `move` | Yes |
 | `find` | Yes |
+| `finddup` | Yes |
 | `for` | Yes |
 | `dry` | Yes |
 | `exit` | Yes |
+| `tree` | Yes |
 
 **Notes**
 
