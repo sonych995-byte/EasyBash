@@ -162,4 +162,56 @@ It relies on the operating system’s available shell to run the final output.
 EasyBash generates Bash-style commands, so it requires a compatible shell environment to execute correctly. If the system does not support Bash syntax, commands may fail unless additional translation support is implemented.
 
 ## version
-v2.0.0
+v2.0.1
+
+# update 2.0.1
+## 🔒 Security & Critical Bug Fixes
+
+### 🚨 Data Loss Prevention
+- **CVE-like issue**: `move` command deleted source files even when copy failed
+  - Fixed: Now only removes successfully copied files
+  - Added rollback protection for partial failures
+  
+### 🐛 Major Bugs Fixed
+
+1. **Broken 'dirs' mode in copy/move**
+   - Logic was completely wrong (concatenating unrelated paths)
+   - Removed mode entirely to prevent confusion
+
+2. **Missing exception handling**
+   - `shutil.copy2()` without try-catch caused crashes
+   - Now gracefully handles permission denied, disk full, etc.
+
+3. **Race condition in parallel output**
+   - Multiple commands writing to stdout simultaneously caused interleaved text
+   - Now captures output per command and displays sequentially
+
+4. **Directory move not supported**
+   - `source.unlink()` fails on directories (IsADirectoryError)
+   - Added `shutil.rmtree()` for directory removal
+
+5. **KeyboardInterrupt during parallel execution**
+   - Thread pool not properly shutdown
+   - Added graceful shutdown with `executor.shutdown(wait=False)`
+
+6. **Batch file recursion**
+   - No depth limit could cause stack overflow
+   - Added MAX_DEPTH = 10 protection
+
+7. **UnicodeDecodeError in batch files**
+   - Used system default encoding instead of UTF-8
+   - Fixed with explicit `encoding='utf-8'`
+
+8. **Find command truncation**
+   - Only showed first 20 results without warning
+   - Now displays all matching files
+
+9. **Flat mode counter reset**
+   - Counter reset per file causing potential overwrites
+   - Changed to global counter for unique naming
+
+## ✅ Improvements
+- Added signal handler for Ctrl+C
+- Added validation for max_workers (minimum 1)
+- Better error messages for permission denied in find
+- Enhanced help text with safety notes
