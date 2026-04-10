@@ -1,62 +1,77 @@
-# EasyBash v6.1
+# EasyBash v6.2
 
 ![python](https://img.shields.io/badge/python-3.8+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
-## 🆕 Updates (v6.1)
+## 🆕 Updates (v6.2)
 
-### 1. Help System
-A built-in help system has been added to improve usability and make the CLI self-documenting.
+### 1. Command Parsing Improvements
+Command parsing has been refactored to use token-based detection instead of `startswith()`.
 
-- `help`  
-  Displays all available commands with short descriptions.
-
-- `help <command>`  
-  Shows detailed usage, description, and an example for a specific command.
-
-This allows users to understand and use EasyBash without needing external documentation.
+- Prevents incorrect matches (e.g. `copycat` no longer triggers `copy`)
+- Improves reliability and correctness of command execution
+- Provides a more scalable foundation for future commands
 
 ---
 
-### 2. Safer Move Operation (Data Loss Prevention)
-The `move` command has been improved to prevent accidental data loss.
+### 2. Safer Copy Return Handling
+The `copy` function now consistently returns a boolean result.
 
-- Files are only deleted from the source **after all copy operations succeed**.
-- If any copy operation fails, the original file is preserved.
+- Returns `True` only if all copy operations succeed
+- Returns `False` if any operation fails or source is missing
 
-This ensures safer file handling and aligns with production-grade behavior.
-
----
-
-### 3. Placeholder Warning System
-The `for` loop engine now detects unknown placeholders.
-
-- If an unrecognized placeholder is used (e.g. `{unknown}`), a warning is displayed.
-- Prevents silent failures and improves debugging.
+This ensures predictable behavior and allows dependent operations (like `move`) to work correctly.
 
 ---
 
-### 4. Thread Limiting for Parallel Execution
-Parallel execution now uses a controlled number of threads.
+### 3. Safe Move Operation (Improved)
+The `move` command has been further hardened.
 
-- `ThreadPoolExecutor` is limited with `max_workers=8`.
-- Prevents system overload when running commands across many paths.
+- Source file is deleted **only if all copy operations succeed**
+- Deletion is wrapped in `try/except` to prevent crashes
+- Clear error messages are shown if deletion fails
 
-This improves stability and performance under heavy workloads.
+This eliminates potential data loss and improves reliability.
+
+---
+
+### 4. Command Timeout Protection
+All executed commands now include a timeout.
+
+- Prevents the system from hanging on long-running or stuck processes
+- Default timeout: 30 seconds
+- Displays an error message if a command exceeds the limit
+
+---
+
+### 5. Parallel Execution Summary
+Parallel execution now provides a result summary.
+
+- Tracks number of successful and failed executions
+- Displays a summary after completion:
+This improves visibility when running commands across multiple paths.
+
+---
+
+### 6. Stability and Error Handling Improvements
+General improvements across the system:
+
+- Better exception handling in file operations
+- More consistent error reporting
+- Reduced risk of silent failures
 
 ---
 
 ### Summary
 This update focuses on:
 
-- Improving user experience (help system)
-- Increasing safety (move operation)
-- Enhancing debugging (placeholder warnings)
-- Ensuring stability (thread limits)
-
----
+- Improving correctness (command parsing)
+- Increasing safety (copy/move operations)
+- Preventing hangs (timeouts)
+- Enhancing observability (execution summary)
+- Strengthening overall system stability
 
 ## 📌 Description
 
@@ -272,7 +287,7 @@ When dry-run is ON, all commands are printed with `[DRY-RUN]` prefix but not exe
 
 ## 📦 Version
 
-v6.1
+v6.2
 
 ---
 
@@ -281,7 +296,7 @@ v6.1
 When you run EasyBash, you'll see:
 
 ```
-EasyBash v6.1 🚀
+EasyBash v6.2 🚀
 EasyBash>
 ```
 
