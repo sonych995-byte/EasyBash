@@ -9,13 +9,14 @@ import shlex
 import subprocess
 from pathlib import Path
 import glob
-from typing import List, Optional, Tuple, Dict, Callable
+from typing import List, Optional, Tuple, Dict, Callable, Set
 from dataclasses import dataclass
 from enum import Enum
 import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
+import signal
+from contextlib import contextmanager
 
 
 # ========================
@@ -45,7 +46,6 @@ class Config:
 class OperationMode(Enum):
     """Operation modes for copy/move commands."""
     DIR = "dir"
-    DIRS = "dirs"
     FLAT = "flat"
 
 
@@ -55,9 +55,9 @@ class OperationMode(Enum):
 
 class CommandParser:
     """Enhanced command parser with better error handling."""
-    
+
     EASY_BASH_COMMANDS = {"for", "rush", "copy", "move", "exit", "help", "find", "batch"}
-    
+
     @staticmethod
     def parse_command(text: str) -> Tuple[Optional[str], List[str]]:
         """
@@ -71,27 +71,27 @@ class CommandParser:
         """
         if not text or not text.strip():
             return None, []
-        
+
         # Remove leading/trailing whitespace
         text = text.strip()
-        
+
         # Handle comments
         if text.startswith('#'):
             return None, []
-        
+
         try:
             parts = shlex.split(text)
         except ValueError as error:
             print(f"{Color.RED}Parse error: {error}{Color.RESET}")
             return None, []
-        
+
         if not parts:
             return None, []
-        
+
         command = parts[0].lower()
         if command in CommandParser.EASY_BASH_COMMANDS:
             return command, parts
-        
+
         # Treat unknown commands as shell commands
         return None, parts
 
@@ -102,7 +102,7 @@ class CommandParser:
 
 class PathManager:
     """Enhanced path handling with glob support and validation."""
-    
+
     @staticmethod
     def expand_paths(path_pattern: str, base_dir: Optional[Path] = None) -> List[Path]:
         """
@@ -117,20 +117,20 @@ class PathManager:
         """
         if base_dir is None:
             base_dir = Path.cwd()
-        
+
         # Handle pipe-separated paths
         paths = []
         for pattern in path_pattern.split('|'):
             pattern = pattern.strip()
             if not pattern:
                 continue
-            
+
             # Expand user and resolve relative paths
             if pattern.startswith('~'):
                 pattern = str(Path(pattern).expanduser())
             elif not Path(pattern).is_absolute():
                 pattern = str(base_dir / pattern)
-            
+
             # Handle glob patterns
             matched = glob.glob(pattern)
             if matched:
@@ -139,9 +139,9 @@ class PathManager:
                 # Try as regular path
                 path_obj = Path(pattern).resolve()
                 paths.append(path_obj)
-        
+
         return paths
-    
+
     @staticmethod
     def validate_paths(paths: List[Path], must_exist: bool = True, must_be_dir: bool = False) -> List[Path]:
         """
@@ -158,18 +158,18 @@ class PathManager:
         valid = []
         for path in paths:
             valid_flag = True
-            
+
             if must_exist and not path.exists():
                 print(f"{Color.YELLOW}Warning: path does not exist -> {path}{Color.RESET}")
                 valid_flag = False
-            
+
             if must_be_dir and valid_flag and not path.is_dir():
                 print(f"{Color.YELLOW}Warning: not a directory -> {path}{Color.RESET}")
                 valid_flag = False
-            
+
             if valid_flag:
                 valid.append(path)
-        
+
         return valid
 
 
@@ -179,10 +179,10 @@ class PathManager:
 
 class CommandExecutor:
     """Enhanced command execution with better output handling."""
-    
+
     def __init__(self, config: Config):
         self.config = config
-    
+
     def run_command(self, command: List[str], cwd: Optional[Path] = None, 
                    capture_output: bool = False) -> Tuple[int, Optional[str], Optional[str]]:
         """
@@ -199,11 +199,11 @@ class CommandExecutor:
         if self.config.dry_run:
             print(f"{Color.CYAN}[DRY RUN] {' '.join(command)} (cwd={cwd}){Color.RESET}")
             return 0, None, None
-        
+
         try:
             if self.config.verbose:
                 print(f"{Color.BLUE}[RUN] {' '.join(command)} (cwd={cwd}){Color.RESET}")
-            
+
             if capture_output:
                 result = subprocess.run(
                     command,
@@ -220,17 +220,17 @@ class CommandExecutor:
                     check=False
                 )
                 return result.returncode, None, None
-                
+
         except FileNotFoundError:
             print(f"{Color.RED}Error: Command not found -> {command[0]}{Color.RESET}")
             return 127, None, None
         except Exception as error:
             print(f"{Color.RED}Execution error: {error}{Color.RESET}")
             return 1, None, None
-    
+
     def run_parallel(self, commands: List[Tuple[List[str], Optional[Path]]]) -> List[int]:
         """
-        Run multiple commands in parallel.
+        Run multiple commands in parallel with proper output handling.
         
         Args:
             commands: List of (command, cwd) tuples
@@ -239,16 +239,33 @@ class CommandExecutor:
             List of return codes
         """
         results = []
+        executor = ThreadPoolExecutor(max_workers=self.config.max_workers)
         
-        with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+        try:
             futures = []
             for cmd, cwd in commands:
-                future = executor.submit(self.run_command, cmd, cwd)
+                future = executor.submit(self.run_command, cmd, cwd, True)
                 futures.append(future)
-            
+
             for future in as_completed(futures):
-                results.append(future.result()[0])
-        
+                try:
+                    returncode, stdout, stderr = future.result()
+                    if stdout:
+                        print(stdout, end='')
+                    if stderr:
+                        print(stderr, end='', file=sys.stderr)
+                    results.append(returncode)
+                except Exception as e:
+                    print(f"{Color.RED}Error in parallel task: {e}{Color.RESET}")
+                    results.append(1)
+                    
+        except KeyboardInterrupt:
+            print(f"\n{Color.YELLOW}Interrupted, shutting down parallel tasks...{Color.RESET}")
+            executor.shutdown(wait=False)
+            raise
+        finally:
+            executor.shutdown(wait=True)
+            
         return results
 
 
@@ -258,11 +275,13 @@ class CommandExecutor:
 
 class EasyBashCommands:
     """Enhanced command implementations."""
-    
+
     def __init__(self, executor: CommandExecutor):
         self.executor = executor
         self.command_history: List[str] = []
-    
+        self.batch_depth: int = 0
+        self.MAX_BATCH_DEPTH: int = 10
+
     def handle_rush(self, cmd_parts: List[str]) -> None:
         """
         rush (path1|path2|pattern) (command)
@@ -272,28 +291,31 @@ class EasyBashCommands:
         if len(cmd_parts) < 3:
             print(f"{Color.RED}Usage: rush (path1|path2|pattern) (command){Color.RESET}")
             return
-        
+
         # Parse paths with glob support
         paths = PathManager.expand_paths(cmd_parts[1])
         paths = PathManager.validate_paths(paths, must_exist=True, must_be_dir=True)
-        
+
         if not paths:
             print(f"{Color.RED}Error: no valid paths found{Color.RESET}")
             return
-        
+
         command = cmd_parts[2:]
-        
+
         if self.executor.config.verbose:
             print(f"{Color.CYAN}Rushing command in {len(paths)} directories...{Color.RESET}")
-        
+
         # Prepare commands for parallel execution
         commands = [(command, path) for path in paths]
-        results = self.executor.run_parallel(commands)
         
-        # Summary
-        success_count = sum(1 for r in results if r == 0)
-        print(f"{Color.GREEN}Completed: {success_count}/{len(paths)} successful{Color.RESET}")
-    
+        try:
+            results = self.executor.run_parallel(commands)
+            # Summary
+            success_count = sum(1 for r in results if r == 0)
+            print(f"{Color.GREEN}Completed: {success_count}/{len(paths)} successful{Color.RESET}")
+        except KeyboardInterrupt:
+            print(f"{Color.YELLOW}Rush command interrupted{Color.RESET}")
+
     def handle_for(self, cmd_parts: List[str]) -> None:
         """
         for (file_pattern) in (path1|path2|pattern) (command)
@@ -303,153 +325,179 @@ class EasyBashCommands:
         if len(cmd_parts) < 5:
             print(f"{Color.RED}Usage: for (file) in (path1|path2|pattern) (command){Color.RESET}")
             return
-        
+
         file_pattern = cmd_parts[1]
-        
+
         # Parse paths with glob support
         paths = PathManager.expand_paths(cmd_parts[3])
         paths = PathManager.validate_paths(paths, must_exist=True, must_be_dir=True)
-        
+
         if not paths:
             print(f"{Color.RED}Error: no valid paths found{Color.RESET}")
             return
-        
+
         base_command = cmd_parts[4:]
         all_files = []
-        
+
         # Find all matching files
         for path in paths:
             full_pattern = str(path / file_pattern)
             matched_files = glob.glob(full_pattern)
             all_files.extend(Path(f).resolve() for f in matched_files)
-            
+
             if self.executor.config.verbose and not matched_files:
                 print(f"{Color.YELLOW}No match in {path} for {file_pattern}{Color.RESET}")
-        
+
         if not all_files:
             print(f"{Color.YELLOW}No files found matching pattern{Color.RESET}")
             return
-        
+
         print(f"{Color.CYAN}Found {len(all_files)} files to process{Color.RESET}")
-        
-        # Prepare commands
-        commands = []
+
+        # Execute commands sequentially (to maintain output order)
         for file_path in all_files:
             command = [arg.replace('{}', str(file_path)) for arg in base_command]
             if '{}' not in ' '.join(base_command):
                 command = base_command + [str(file_path)]
-            commands.append((command, file_path.parent))
-        
-        # Execute commands (could be parallelized)
-        for cmd, cwd in commands:
-            self.executor.run_command(cmd, cwd)
-    
-    def handle_copy(self, cmd_parts: List[str]) -> None:
+            self.executor.run_command(command, file_path.parent)
+
+    def _copy_files(self, sources: List[Path], dest_paths: List[Path], mode: OperationMode) -> Tuple[bool, List[Tuple[Path, Path]]]:
         """
-        copy <file|pattern> to <path1|path2|pattern> <mode>
-        mode: dir | dirs | flat
+        Copy files with specified mode.
+        
+        Returns:
+            Tuple of (success, list of (source, target) successful copies)
         """
-        if len(cmd_parts) < 5:
-            print(f"{Color.RED}Usage: copy <file|pattern> to <path1|path2|pattern> <mode>{Color.RESET}")
-            print("  mode: dir (copy to each directory), dirs (create nested), flat (copy to single dir)")
-            return
-        
-        # Handle file patterns
-        source_pattern = cmd_parts[1]
-        sources = PathManager.expand_paths(source_pattern)
-        sources = PathManager.validate_paths(sources, must_exist=True)
-        
-        if not sources:
-            print(f"{Color.RED}Error: no source files found{Color.RESET}")
-            return
-        
-        dest_pattern = cmd_parts[3]
-        mode_str = cmd_parts[4].lower()
-        
-        try:
-            mode = OperationMode(mode_str)
-        except ValueError:
-            print(f"{Color.RED}Error: mode must be 'dir', 'dirs', or 'flat'{Color.RESET}")
-            return
-        
-        # Parse destinations
-        dest_paths = PathManager.expand_paths(dest_pattern)
+        successful_copies = []
+        all_success = True
         
         if mode == OperationMode.DIR:
             # Copy to each destination directory
             dest_paths = PathManager.validate_paths(dest_paths, must_exist=True, must_be_dir=True)
             
             for source in sources:
+                if source.is_dir():
+                    print(f"{Color.YELLOW}Skipping directory (use shell command): {source}{Color.RESET}")
+                    continue
+                    
                 for dest_dir in dest_paths:
                     target = dest_dir / source.name
-                    if not self.executor.config.dry_run:
-                        shutil.copy2(source, target)
-                    print(f"{Color.GREEN}[COPY] {source} -> {target}{Color.RESET}")
-        
-        elif mode == OperationMode.DIRS:
-            # Create nested directory structure
-            if not dest_paths:
-                print(f"{Color.RED}Error: destination paths required for 'dirs' mode{Color.RESET}")
-                return
-            
-            base_dir = Path.cwd()
-            for part in dest_paths:
-                base_dir = base_dir / part.name
-            
-            base_dir.mkdir(parents=True, exist_ok=True)
-            
-            for source in sources:
-                target = base_dir / source.name
-                if not self.executor.config.dry_run:
-                    shutil.copy2(source, target)
-                print(f"{Color.GREEN}[COPY] {source} -> {target}{Color.RESET}")
-        
+                    try:
+                        if not self.executor.config.dry_run:
+                            shutil.copy2(source, target)
+                        print(f"{Color.GREEN}[COPY] {source} -> {target}{Color.RESET}")
+                        successful_copies.append((source, target))
+                    except Exception as e:
+                        print(f"{Color.RED}Failed to copy {source} to {target}: {e}{Color.RESET}")
+                        all_success = False
+                        
         elif mode == OperationMode.FLAT:
             # Copy all to a single directory (flatten)
             if len(dest_paths) != 1:
                 print(f"{Color.RED}Error: 'flat' mode requires exactly one destination{Color.RESET}")
-                return
-            
+                return False, []
+                
             dest_dir = dest_paths[0]
-            dest_dir.mkdir(parents=True, exist_ok=True)
+            if not self.executor.config.dry_run:
+                dest_dir.mkdir(parents=True, exist_ok=True)
             
+            # Global counter for name conflicts
+            counter = 1
             for source in sources:
+                if source.is_dir():
+                    print(f"{Color.YELLOW}Skipping directory (use shell command): {source}{Color.RESET}")
+                    continue
+                    
                 target = dest_dir / source.name
+                original_target = target
                 
                 # Handle name conflicts
-                counter = 1
-                original_target = target
                 while target.exists() and not self.executor.config.dry_run:
                     target = original_target.parent / f"{original_target.stem}_{counter}{original_target.suffix}"
                     counter += 1
                 
-                if not self.executor.config.dry_run:
-                    shutil.copy2(source, target)
-                print(f"{Color.GREEN}[COPY] {source} -> {target}{Color.RESET}")
-    
+                try:
+                    if not self.executor.config.dry_run:
+                        shutil.copy2(source, target)
+                    print(f"{Color.GREEN}[COPY] {source} -> {target}{Color.RESET}")
+                    successful_copies.append((source, target))
+                except Exception as e:
+                    print(f"{Color.RED}Failed to copy {source} to {target}: {e}{Color.RESET}")
+                    all_success = False
+                    
+        return all_success, successful_copies
+
+    def handle_copy(self, cmd_parts: List[str]) -> Tuple[bool, List[Tuple[Path, Path]]]:
+        """
+        copy <file|pattern> to <path1|path2|pattern> <mode>
+        mode: dir | flat
+        
+        Returns:
+            Tuple of (success, list of (source, target) successful copies)
+        """
+        if len(cmd_parts) < 5:
+            print(f"{Color.RED}Usage: copy <file|pattern> to <path1|path2|pattern> <mode>{Color.RESET}")
+            print("  mode: dir (copy to each directory), flat (copy to single dir)")
+            return False, []
+
+        # Handle file patterns
+        source_pattern = cmd_parts[1]
+        sources = PathManager.expand_paths(source_pattern)
+        sources = PathManager.validate_paths(sources, must_exist=True)
+
+        if not sources:
+            print(f"{Color.RED}Error: no source files found{Color.RESET}")
+            return False, []
+
+        dest_pattern = cmd_parts[3]
+        mode_str = cmd_parts[4].lower()
+
+        try:
+            mode = OperationMode(mode_str)
+        except ValueError:
+            print(f"{Color.RED}Error: mode must be 'dir' or 'flat'{Color.RESET}")
+            return False, []
+
+        # Parse destinations
+        dest_paths = PathManager.expand_paths(dest_pattern)
+        
+        return self._copy_files(sources, dest_paths, mode)
+
     def handle_move(self, cmd_parts: List[str]) -> None:
         """
         move <file|pattern> to <path1|path2|pattern> <mode>
-        mode: dir | dirs | flat
+        mode: dir | flat
         """
         if len(cmd_parts) < 5:
             print(f"{Color.RED}Usage: move <file|pattern> to <path1|path2|pattern> <mode>{Color.RESET}")
             return
+
+        # First perform copy operation and track what was successfully copied
+        success, successful_copies = self.handle_copy(cmd_parts)
         
-        # First perform copy operation
-        self.handle_copy(cmd_parts)
-        
-        # Then remove sources if copy was successful
-        if not self.executor.config.dry_run:
-            source_pattern = cmd_parts[1]
-            sources = PathManager.expand_paths(source_pattern)
-            sources = PathManager.validate_paths(sources, must_exist=True)
+        if not success:
+            print(f"{Color.RED}Move aborted due to copy errors{Color.RESET}")
+            return
             
-            for source in sources:
-                if source.exists():
-                    source.unlink()
+        if not successful_copies:
+            print(f"{Color.YELLOW}No files were copied successfully{Color.RESET}")
+            return
+        
+        # Remove successfully copied sources
+        copied_sources = {source for source, _ in successful_copies}
+        
+        for source in copied_sources:
+            try:
+                if not self.executor.config.dry_run:
+                    if source.is_dir():
+                        shutil.rmtree(source)
+                    else:
+                        source.unlink()
                     print(f"{Color.GREEN}[MOVE] Removed original: {source}{Color.RESET}")
-    
+            except Exception as e:
+                print(f"{Color.RED}Failed to remove {source}: {e}{Color.RESET}")
+                print(f"{Color.YELLOW}Warning: Original file/directory may still exist{Color.RESET}")
+
     def handle_find(self, cmd_parts: List[str]) -> None:
         """
         find <pattern> in <path1|path2>
@@ -459,46 +507,53 @@ class EasyBashCommands:
         if len(cmd_parts) < 4 or cmd_parts[2] != 'in':
             print(f"{Color.RED}Usage: find <pattern> in <path1|path2>{Color.RESET}")
             return
-        
+
         pattern = cmd_parts[1]
         paths = PathManager.expand_paths(cmd_parts[3])
         paths = PathManager.validate_paths(paths, must_exist=True, must_be_dir=True)
-        
+
         found_files = []
         for path in paths:
-            matched = path.glob(f"**/{pattern}")
-            found_files.extend(matched)
-        
+            try:
+                matched = path.glob(f"**/{pattern}")
+                found_files.extend(matched)
+            except PermissionError:
+                print(f"{Color.YELLOW}Permission denied: {path}{Color.RESET}")
+
         if found_files:
             print(f"{Color.GREEN}Found {len(found_files)} files:{Color.RESET}")
-            for file_path in found_files[:20]:  # Limit output
+            for file_path in found_files:
                 print(f"  {file_path}")
-            if len(found_files) > 20:
-                print(f"  ... and {len(found_files) - 20} more")
         else:
             print(f"{Color.YELLOW}No files found matching '{pattern}'{Color.RESET}")
-    
+
     def handle_batch(self, cmd_parts: List[str]) -> None:
         """
         batch <file_with_commands>
         
         Execute commands from a batch file.
         """
+        if self.batch_depth >= self.MAX_BATCH_DEPTH:
+            print(f"{Color.RED}Error: Batch recursion depth exceeded (max {self.MAX_BATCH_DEPTH}){Color.RESET}")
+            return
+            
         if len(cmd_parts) < 2:
             print(f"{Color.RED}Usage: batch <file_with_commands>{Color.RESET}")
             return
-        
+
         batch_file = Path(cmd_parts[1]).expanduser().resolve()
-        
+
         if not batch_file.exists():
             print(f"{Color.RED}Error: batch file not found -> {batch_file}{Color.RESET}")
             return
-        
+
         try:
-            with open(batch_file, 'r') as f:
+            with open(batch_file, 'r', encoding='utf-8') as f:
                 commands = f.readlines()
-            
+
             print(f"{Color.CYAN}Executing {len(commands)} commands from {batch_file}{Color.RESET}")
+
+            self.batch_depth += 1
             
             for line_num, line in enumerate(commands, 1):
                 line = line.strip()
@@ -509,14 +564,30 @@ class EasyBashCommands:
                     if command:
                         handler = getattr(self, f"handle_{command}", None)
                         if handler:
-                            handler(parts)
+                            if command == "batch":
+                                handler(parts)
+                            else:
+                                handler(parts)
                         else:
                             self.executor.run_command(parts)
                     elif parts:
                         self.executor.run_command(parts)
-        
+                    
+        except UnicodeDecodeError:
+            print(f"{Color.RED}Error: Cannot read batch file as UTF-8 -> {batch_file}{Color.RESET}")
         except Exception as error:
             print(f"{Color.RED}Error executing batch file: {error}{Color.RESET}")
+        finally:
+            self.batch_depth -= 1
+
+    def handle_help(self, _cmd_parts: List[str]) -> None:
+        """Show help message."""
+        HelpSystem.show_help()
+
+    def handle_exit(self, _cmd_parts: List[str]) -> None:
+        """Exit EasyBash."""
+        print(f"{Color.GREEN}Goodbye!{Color.RESET}")
+        sys.exit(0)
 
 
 # ========================
@@ -525,19 +596,19 @@ class EasyBashCommands:
 
 class HelpSystem:
     """Enhanced help system with detailed examples."""
-    
+
     @staticmethod
     def show_help() -> None:
         """Display comprehensive help message."""
         help_text = f"""
-{Color.BOLD}{Color.CYAN}EasyBash - Powerful CLI Tool for Batch Operations{Color.RESET}
+{Color.BOLD}{Color.CYAN}EasyBash v3.0 - Powerful CLI Tool for Batch Operations{Color.RESET}
 {Color.BOLD}============================================{Color.RESET}
 
 {Color.BOLD}Core Commands:{Color.RESET}
   {Color.GREEN}for{Color.RESET} <pattern> in <path1|path2|pattern> <command>
       Execute command on matching files across directories
-      Example: {Color.YELLOW}for *.py in src|tests python {}{Color.RESET}
-      Example: {Color.YELLOW}for *.jpg in ~/Pics convert {} -resize 50%{}_small.jpg{Color.RESET}
+      Example: {Color.YELLOW}for *.py in src|tests python {{}}{Color.RESET}
+      Example: {Color.YELLOW}for *.jpg in ~/Pics convert {{}} -resize 50%{{}}_small.jpg{Color.RESET}
 
   {Color.GREEN}rush{Color.RESET} <path1|path2|pattern> <command>
       Execute command in multiple directories (parallel)
@@ -545,12 +616,12 @@ class HelpSystem:
       Example: {Color.YELLOW}rush */build make clean{Color.RESET}
 
   {Color.GREEN}copy{Color.RESET} <file|pattern> to <dest1|dest2|pattern> <mode>
-      Copy files with different modes (dir/dirs/flat)
+      Copy files with different modes (dir/flat)
       Example: {Color.YELLOW}copy *.txt to backup dir{Color.RESET}
-      Example: {Color.YELLOW}copy config.ini to project1|project2 dirs{Color.RESET}
+      Example: {Color.YELLOW}copy config.ini to project1|project2 flat{Color.RESET}
 
   {Color.GREEN}move{Color.RESET} <file|pattern> to <dest1|dest2|pattern> <mode>
-      Move files (same modes as copy)
+      Move files (same modes as copy - safe, only removes successfully copied files)
       Example: {Color.YELLOW}move *.log to archive dir{Color.RESET}
 
   {Color.GREEN}find{Color.RESET} <pattern> in <path1|path2>
@@ -573,6 +644,7 @@ class HelpSystem:
   • Path variable replacement with {{}}
   • Dry run mode (set environment variable EASYBASH_DRY_RUN=1)
   • Colored output for better readability
+  • Safe move operation (only removes successfully copied files)
   • Command history (up/down arrows in supported terminals)
 
 {Color.BOLD}Environment Variables:{Color.RESET}
@@ -585,6 +657,7 @@ class HelpSystem:
   • Combine with standard Unix commands: rush dir1|dir2 'ls -la | grep txt'
   • Use '{{}}' placeholder for filename in 'for' command
   • Batch files can contain any EasyBash or shell commands
+  • Move command is safe: if copy fails, original files are not deleted
 """
         print(help_text)
 
@@ -595,66 +668,83 @@ class HelpSystem:
 
 class EasyBash:
     """Main EasyBash application."""
-    
+
     def __init__(self):
         self.config = self._load_config()
         self.executor = CommandExecutor(self.config)
         self.commands = EasyBashCommands(self.executor)
         self.parser = CommandParser()
         self.running = True
-    
+
     def _load_config(self) -> Config:
         """Load configuration from environment variables."""
         config = Config()
-        
+
         # Load from environment
         config.dry_run = os.environ.get('EASYBASH_DRY_RUN', '0').lower() in ('1', 'true', 'yes')
         config.verbose = os.environ.get('EASYBASH_VERBOSE', '0').lower() in ('1', 'true', 'yes')
-        
+
         try:
             workers = os.environ.get('EASYBASH_MAX_WORKERS', '4')
             config.max_workers = int(workers)
+            if config.max_workers < 1:
+                config.max_workers = 4
         except ValueError:
             pass
-        
+
         return config
-    
+
+    def _signal_handler(self, signum: int, frame) -> None:
+        """Handle interrupt signals gracefully."""
+        print(f"\n{Color.YELLOW}Interrupted. Type 'exit' to quit or continue.{Color.RESET}")
+
     def run(self) -> None:
         """Main program loop."""
-        self._print_welcome()
+        # Set up signal handler
+        signal.signal(signal.SIGINT, self._signal_handler)
         
+        self._print_welcome()
+
         while self.running:
             try:
                 text = input(f"{Color.BOLD}easybash> {Color.RESET}")
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 print(f"\n{Color.YELLOW}Exiting...{Color.RESET}")
                 break
-            
+            except KeyboardInterrupt:
+                continue
+
             # Add to history (simplified - would need readline for full history)
             if text.strip():
                 self.commands.command_history.append(text)
-            
+
             command, parts = self.parser.parse_command(text)
-            
-            if command and hasattr(self.commands, f"handle_{command}"):
-                # Execute EasyBash command
-                handler = getattr(self.commands, f"handle_{command}")
-                handler(parts)
-            elif command == "exit":
+
+            if command == "exit":
+                self.running = False
                 print(f"{Color.GREEN}Goodbye!{Color.RESET}")
                 break
+            elif command and hasattr(self.commands, f"handle_{command}"):
+                # Execute EasyBash command
+                handler = getattr(self.commands, f"handle_{command}")
+                try:
+                    handler(parts)
+                except KeyboardInterrupt:
+                    print(f"{Color.YELLOW}Command interrupted{Color.RESET}")
+                except Exception as e:
+                    print(f"{Color.RED}Error executing {command}: {e}{Color.RESET}")
             elif parts:
                 # Execute as shell command
                 self.executor.run_command(parts)
             # Empty lines and comments are ignored
-    
+
     def _print_welcome(self) -> None:
         """Print welcome message."""
         print(f"""
-{Color.BOLD}{Color.CYAN}EasyBash v2.0 - Enhanced Batch Command Tool{Color.RESET}
+{Color.BOLD}{Color.CYAN}EasyBash v3.0 - Enhanced Batch Command Tool{Color.RESET}
 {Color.BOLD}========================================{Color.RESET}
 Type {Color.GREEN}help{Color.RESET} for commands, {Color.GREEN}exit{Color.RESET} to quit
-{Color.YELLOW}Mode: {'DRY RUN' if self.config.dry_run else 'LIVE'} | {'Verbose' if self.config.verbose else 'Quiet'}{Color.RESET}
+{Color.YELLOW}Mode: {'DRY RUN' if self.config.dry_run else 'LIVE'} | {'Verbose' if self.config.verbose else 'Quiet'} | Workers: {self.config.max_workers}{Color.RESET}
 """)
 
 
@@ -672,6 +762,8 @@ def main() -> None:
         sys.exit(0)
     except Exception as error:
         print(f"{Color.RED}Fatal error: {error}{Color.RESET}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
