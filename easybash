@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import shlex
 import subprocess
 import shutil
 import glob
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Dict, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -33,20 +34,11 @@ def cprint(text, color=Color.RESET):
 
 class PathManager:
     @staticmethod
-    def detect_mode(raw: str) -> Tuple[List[str], str]:
-        if '|' in raw:
-            return [p.strip() for p in raw.split('|')], 'parallel'
-        if '>' in raw:
-            return [p.strip() for p in raw.split('>')], 'chain'
-        return [raw.strip()], 'single'
-
-    @staticmethod
     def expand_glob(paths: List[str]) -> List[str]:
         expanded = []
         for p in paths:
             if any(c in p for c in ('*', '?', '[')):
-                matches = glob.glob(p, recursive=True)
-                expanded.extend(matches)
+                expanded.extend(glob.glob(p, recursive=True))
             else:
                 expanded.append(p)
         return expanded
@@ -89,7 +81,7 @@ class Executor:
         with ThreadPoolExecutor() as ex:
             futures = [ex.submit(self.run_cmd, cmd, p) for p in paths]
             for f in as_completed(futures):
-                f.result()  # wait, ignore return code
+                f.result()
 
     def chain(self, paths, cmd):
         paths = PathManager.filter_dirs(PathManager.expand_glob(paths))
@@ -114,7 +106,6 @@ class Executor:
 class FileOps:
     @staticmethod
     def _strip_quotes(s: str) -> str:
-        """Remove surrounding single or double quotes if present."""
         if len(s) >= 2 and (s[0] == s[-1] == '"' or s[0] == s[-1] == "'"):
             return s[1:-1]
         return s
@@ -127,10 +118,7 @@ class FileOps:
             return
         for d in dsts:
             d = Path(FileOps._strip_quotes(d))
-            if d.is_dir():
-                target = d / src_path.name
-            else:
-                target = d
+            target = d / src_path.name if d.is_dir() else d
             shutil.copy2(src_path, target)
             cprint(f"[COPY] {src} -> {target}", Color.GREEN)
 
@@ -142,7 +130,7 @@ class FileOps:
 
 
 # ============================================================================
-# Find Command
+# Finder
 # ============================================================================
 
 class Finder:
@@ -157,62 +145,100 @@ class Finder:
 
 
 # ============================================================================
+# For Loop Engine
+# ============================================================================
+
+class ForLoop:
+    _placeholders: Dict[str, Callable[[Path], str]] = {
+        '{}': lambda p: shlex.quote(str(p)),
+        '{/}': lambda p: shlex.quote(p.name),
+        '{.}': lambda p: shlex.quote(p.stem),
+        '{..}': lambda p: shlex.quote(p.parent.name),
+        '{abs}': lambda p: shlex.quote(str(p.resolve())),
+    }
+
+    @classmethod
+    def register_placeholder(cls, key: str, func: Callable[[Path], str]):
+        cls._placeholders[key] = func
+
+    @staticmethod
+    def _substitute_placeholders(command_template: str, path: Path) -> str:
+        def replacer(match):
+            key = match.group(0)
+            if key in ForLoop._placeholders:
+                return ForLoop._placeholders[key](path)
+            return key
+
+        pattern = re.compile(r'\{[^}]+\}')
+        return pattern.sub(replacer, command_template)
+
+    @staticmethod
+    def _substitute_variable(command_template: str, var_name: str, quoted_path: str) -> str:
+        pattern = rf'\b{re.escape(var_name)}\b'
+        return re.sub(pattern, quoted_path, command_template)
+
+    @staticmethod
+    def run(var_name: str, pattern: str, command_template: str, executor: Executor):
+        matches = glob.glob(pattern, recursive=True)
+
+        if not matches:
+            cprint(f"No matches found for pattern '{pattern}'", Color.YELLOW)
+            return
+
+        has_placeholder = bool(re.search(r'\{[^}]+\}', command_template))
+
+        for match in matches:
+            path = Path(match)
+
+            if has_placeholder:
+                cmd_str = ForLoop._substitute_placeholders(command_template, path)
+            else:
+                quoted = shlex.quote(str(path))
+                cmd_str = ForLoop._substitute_variable(command_template, var_name, quoted)
+
+            try:
+                cmd_args = shlex.split(cmd_str)
+            except ValueError as e:
+                cprint(f"[ERROR] Invalid command: {cmd_str} ({e})", Color.RED)
+                continue
+
+            executor.run_cmd(cmd_args)
+
+
+# ============================================================================
 # Main EasyBash
 # ============================================================================
 
 class EasyBash:
     def __init__(self):
-        self.executor = Executor(dry_run=False)
-        self.fileops = FileOps()
+        self.executor = Executor()
 
-    # ---------------- FOR COMMAND ----------------
-    def run_for(self, item, paths, cmd):
-        # Expand globs and filter existing directories
-        paths = PathManager.filter_dirs(PathManager.expand_glob(paths))
-        if not paths:
-            cprint("[ERROR] No valid paths for 'for' loop", Color.RED)
-            return
-        for p in paths:
-            cprint(f"[FOR] {item} in {p}", Color.BLUE)
-            self.executor.run_cmd(cmd, cwd=p)
-
-    # ---------------- COPY ----------------
     def copy(self, line):
         parts = shlex.split(line)
         if len(parts) < 4 or parts[2] != 'to':
-            cprint("[ERROR] Usage: copy SRC to DST1|DST2[|DST3...]", Color.RED)
+            cprint("[ERROR] Usage: copy SRC to DST1|DST2", Color.RED)
             return
-        src = parts[1]
-        dsts = parts[3].split('|')
-        FileOps.copy(src, dsts)
+        FileOps.copy(parts[1], parts[3].split('|'))
 
-    # ---------------- MOVE ----------------
     def move(self, line):
         parts = shlex.split(line)
         if len(parts) < 4 or parts[2] != 'to':
-            cprint("[ERROR] Usage: move SRC to DST1|DST2[|DST3...]", Color.RED)
+            cprint("[ERROR] Usage: move SRC to DST1|DST2", Color.RED)
             return
-        src = parts[1]
-        dsts = parts[3].split('|')
-        FileOps.move(src, dsts)
+        FileOps.move(parts[1], parts[3].split('|'))
 
-    # ---------------- FIND ----------------
     def find(self, line):
         parts = shlex.split(line)
         if len(parts) < 2:
             cprint("[ERROR] Usage: find PATTERN [ROOT]", Color.RED)
             return
-        pattern = parts[1]
-        root = parts[2] if len(parts) > 2 else "."
-        Finder.find(pattern, root)
+        Finder.find(parts[1], parts[2] if len(parts) > 2 else ".")
 
-    # ---------------- MAIN ----------------
     def run(self, raw):
         raw = raw.strip()
         if not raw:
             return
 
-        # Dry‑run toggles
         if raw == "dry on":
             self.executor.dry_run = True
             cprint("[DRY RUN ON]", Color.YELLOW)
@@ -222,61 +248,32 @@ class EasyBash:
             cprint("[DRY RUN OFF]", Color.YELLOW)
             return
 
-        # COPY
         if raw.startswith("copy"):
-            self.copy(raw)
-            return
-
-        # MOVE
+            return self.copy(raw)
         if raw.startswith("move"):
-            self.move(raw)
-            return
-
-        # FIND
+            return self.move(raw)
         if raw.startswith("find"):
-            self.find(raw)
+            return self.find(raw)
+
+        if raw.startswith("for") and "=>" in raw:
+            left, right = raw.split("=>", 1)
+            tokens = shlex.split(left)
+            if len(tokens) != 4 or tokens[0] != "for" or tokens[2] != "in":
+                cprint("[ERROR] Usage: for VAR in PATTERN => COMMAND", Color.RED)
+                return
+            ForLoop.run(tokens[1], tokens[3], right.strip(), self.executor)
             return
 
-        # FOR command (improved parsing)
-        if raw.startswith("for"):
-            # Use shlex to tokenize the whole line
-            tokens = shlex.split(raw)
-            # Expected: for item in path1|path2 ... cmd...
-            if len(tokens) < 4 or tokens[2] != 'in':
-                cprint("[ERROR] Usage: for ITEM in PATH1|PATH2... COMMAND...", Color.RED)
-                return
-            item = tokens[1]
-            # The token after 'in' may contain '|' and possibly quoted spaces
-            paths_token = tokens[3]
-            paths = paths_token.split('|')
-            # The rest (tokens[4:]) is the command
-            cmd = tokens[4:]
-            if not cmd:
-                cprint("[ERROR] No command specified after paths", Color.RED)
-                return
-            self.run_for(item, paths, cmd)
-            return
-
-        # Normal + pipe system (parallel / chain)
         tokens = shlex.split(raw)
         if not tokens:
             return
-        first = tokens[0]
 
-        if '|' in first:
-            paths = first.split('|')
-            cmd = tokens[1:]
-            self.executor.parallel(paths, cmd)
-            return
-
-        if '>' in first:
-            paths = first.split('>')
-            cmd = tokens[1:]
-            self.executor.chain(paths, cmd)
-            return
-
-        # Single command
-        self.executor.single(tokens)
+        if '|' in tokens[0]:
+            self.executor.parallel(tokens[0].split('|'), tokens[1:])
+        elif '>' in tokens[0]:
+            self.executor.chain(tokens[0].split('>'), tokens[1:])
+        else:
+            self.executor.single(tokens)
 
 
 # ============================================================================
@@ -286,15 +283,7 @@ class EasyBash:
 if __name__ == "__main__":
     eb = EasyBash()
 
-    cprint("EasyBash v3.2 (Improved)", Color.CYAN)
-    cprint("Type 'exit' to quit", Color.YELLOW)
-    cprint("Examples:", Color.CYAN)
-    cprint("  copy report.txt to backup|archive", Color.GREEN)
-    cprint("  move data.csv to processed|archive", Color.GREEN)
-    cprint("  find '*.log' ./logs", Color.GREEN)
-    cprint("  for f in dir1|dir2 ls -la", Color.GREEN)
-    cprint("  dir1|dir2 ls -la         (parallel)", Color.GREEN)
-    cprint("  dir1>dir2>dir3 ls -la    (chain)", Color.GREEN)
+    cprint("EasyBash v6.0 🚀", Color.CYAN)
 
     while True:
         try:
@@ -306,4 +295,4 @@ if __name__ == "__main__":
             print()
             break
         except Exception as e:
-            cprint(f"[UNEXPECTED ERROR] {e}", Color.RED)
+            cprint(f"[ERROR] {e}", Color.RED)
