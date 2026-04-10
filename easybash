@@ -6,8 +6,6 @@ import shlex
 import subprocess
 import shutil
 import glob
-import hashlib
-import time
 from pathlib import Path
 from typing import List, Dict, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -32,13 +30,13 @@ def cprint(text, color=Color.RESET):
 
 # ============================================================================
 # Help System
-# =========================================================================
+# ============================================================================
 
 HELP = {
     "copy": {
         "usage": "copy SRC to DST1|DST2",
         "desc": "Copy file to one or more destinations",
-        "example": "copy a.txt to backup/"
+        "example": "copy a.txt to backup/|test/"
     },
     "move": {
         "usage": "move SRC to DST1|DST2",
@@ -60,35 +58,12 @@ HELP = {
         "desc": "Enable or disable dry-run mode",
         "example": "dry on"
     },
-    "cl": {
-        "usage": "cl [ROOT] [--empty] [--ext .log .tmp] [--days N]",
-        "desc": "Clean unnecessary files (empty, old, or by extension)",
-        "example": "cl . --empty --days 7"
-    },
-    "org": {
-        "usage": "org [ROOT]",
-        "desc": "Organize files into categorized folders automatically",
-        "example": "org ./Downloads"
-    },
-    "finddup": {
-        "usage": "finddup [ROOT]",
-        "desc": "Find duplicate files using hash comparison",
-        "example": "finddup ."
-    },
     "exit": {
         "usage": "exit",
         "desc": "Exit EasyBash",
         "example": "exit"
     }
 }
-
-
-# ============================================================================
-# Color Print
-# ============================================================================
-
-def cprint(text, color=Color.RESET):
-    print(f"{color}{text}{Color.RESET}")
 
 
 # ============================================================================
@@ -132,12 +107,47 @@ class Executor:
 
         try:
             return subprocess.run(cmd, cwd=cwd, timeout=30).returncode
+        except subprocess.TimeoutExpired:
+            cprint("[ERROR] Command timed out", Color.RED)
+            return 1
         except Exception as e:
             cprint(f"[ERROR] {e}", Color.RED)
             return 1
 
+    def parallel(self, paths, cmd):
+        paths = PathManager.filter_dirs(PathManager.expand_glob(paths))
+        if not paths:
+            cprint("[ERROR] No valid paths for parallel execution", Color.RED)
+            return
+
+        success = 0
+        fail = 0
+
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futures = [ex.submit(self.run_cmd, cmd, p) for p in paths]
+            for f in as_completed(futures):
+                if f.result() == 0:
+                    success += 1
+                else:
+                    fail += 1
+
+        cprint(f"[SUMMARY] success={success}, fail={fail}", Color.CYAN)
+
+    def chain(self, paths, cmd):
+        paths = PathManager.filter_dirs(PathManager.expand_glob(paths))
+        if not paths:
+            cprint("[ERROR] No valid paths for chain execution", Color.RED)
+            return
+
+        for p in paths:
+            cprint(f"[CHAIN] {p}", Color.BLUE)
+            r = self.run_cmd(cmd, p)
+            if r != 0:
+                cprint("[CHAIN STOP] command failed", Color.RED)
+                break
+
     def single(self, cmd):
-        return self.run_cmd(cmd)
+        self.run_cmd(cmd)
 
 
 # ============================================================================
@@ -181,142 +191,9 @@ class FileOps:
                 Path(src).unlink()
                 cprint(f"[MOVE] removed {src}", Color.GREEN)
             except Exception as e:
-                cprint(f"[ERROR] Remove failed: {e}", Color.RED)
-
-
-# ============================================================================
-# File Manager (NEW v6.3)
-# ============================================================================
-
-class FileManager:
-
-    # =========================
-    # CL (clean)
-    # =========================
-    @staticmethod
-    def cl(root=".", exts=None, empty=False, days=None):
-        root = Path(root)
-        if not root.exists():
-            cprint(f"[ERROR] Path not found: {root}", Color.RED)
-            return
-
-        now = time.time()
-        deleted = 0
-
-        for f in root.rglob("*"):
-            if not f.is_file():
-                continue
-
-            try:
-                # extension filter
-                if exts and f.suffix not in exts:
-                    continue
-
-                # empty file
-                if empty and f.stat().st_size == 0:
-                    f.unlink()
-                    deleted += 1
-                    cprint(f"[CL] removed empty: {f}", Color.GREEN)
-                    continue
-
-                # age filter
-                if days is not None:
-                    age = (now - f.stat().st_mtime) / 86400
-                    if age > days:
-                        f.unlink()
-                        deleted += 1
-                        cprint(f"[CL] removed old: {f}", Color.GREEN)
-
-            except Exception as e:
-                cprint(f"[ERROR] cl failed: {e}", Color.RED)
-
-        cprint(f"[CL SUMMARY] deleted={deleted}", Color.CYAN)
-
-    # =========================
-    # ORG (organize)
-    # =========================
-    @staticmethod
-    def org(root="."):
-        root = Path(root)
-
-        if not root.exists():
-            cprint(f"[ERROR] Path not found: {root}", Color.RED)
-            return
-
-        rules = {
-            ".py": "python",
-            ".js": "javascript",
-            ".md": "docs",
-            ".txt": "text",
-            ".json": "config",
-            ".jpg": "images",
-            ".png": "images",
-            ".mp4": "videos",
-        }
-
-        moved = 0
-
-        for f in root.iterdir():
-            if f.is_dir():
-                continue
-
-            folder = rules.get(f.suffix, "others")
-            target = root / folder
-
-            try:
-                target.mkdir(exist_ok=True)
-                shutil.move(str(f), str(target / f.name))
-                moved += 1
-                cprint(f"[ORG] {f.name} -> {folder}/", Color.GREEN)
-            except Exception as e:
-                cprint(f"[ERROR] org failed: {e}", Color.RED)
-
-        cprint(f"[ORG SUMMARY] moved={moved}", Color.CYAN)
-
-    # =========================
-    # FIND DUPLICATES
-    # =========================
-    @staticmethod
-    def finddup(root="."):
-        root = Path(root)
-
-        if not root.exists():
-            cprint(f"[ERROR] Path not found: {root}", Color.RED)
-            return
-
-        def hash_file(p):
-            h = hashlib.md5()
-            try:
-                with open(p, "rb") as f:
-                    while chunk := f.read(8192):
-                        h.update(chunk)
-                return h.hexdigest()
-            except:
-                return None
-
-        files = list(root.rglob("*"))
-        hash_map = {}
-
-        for f in files:
-            if not f.is_file():
-                continue
-
-            h = hash_file(f)
-            if not h:
-                continue
-
-            hash_map.setdefault(h, []).append(f)
-
-        dup = 0
-
-        for h, lst in hash_map.items():
-            if len(lst) > 1:
-                cprint(f"[DUP GROUP] {h}", Color.YELLOW)
-                for f in lst:
-                    cprint(f"   {f}", Color.RED)
-                dup += len(lst) - 1
-
-        cprint(f"[DUP SUMMARY] duplicates={dup}", Color.CYAN)
+                cprint(f"[ERROR] Failed to remove source: {e}", Color.RED)
+        else:
+            cprint("[MOVE] aborted due to copy failure", Color.RED)
 
 
 # ============================================================================
@@ -327,18 +204,117 @@ class Finder:
     @staticmethod
     def find(pattern, root="."):
         results = list(Path(root).rglob(pattern))
+        if not results:
+            cprint(f"[FIND] No matches for '{pattern}' in '{root}'", Color.YELLOW)
         for r in results:
             cprint(f"[FIND] {r}", Color.CYAN)
         return results
 
 
 # ============================================================================
-# EasyBash Core
+# For Loop Engine
+# ============================================================================
+
+class ForLoop:
+    _placeholders: Dict[str, Callable[[Path], str]] = {
+        '{}': lambda p: shlex.quote(str(p)),
+        '{/}': lambda p: shlex.quote(p.name),
+        '{.}': lambda p: shlex.quote(p.stem),
+        '{..}': lambda p: shlex.quote(p.parent.name),
+        '{abs}': lambda p: shlex.quote(str(p.resolve())),
+    }
+
+    @staticmethod
+    def _substitute_placeholders(command_template: str, path: Path) -> str:
+        def replacer(match):
+            key = match.group(0)
+            if key in ForLoop._placeholders:
+                return ForLoop._placeholders[key](path)
+            cprint(f"[WARN] Unknown placeholder: {key}", Color.YELLOW)
+            return key
+
+        return re.sub(r'\{[^}]+\}', replacer, command_template)
+
+    @staticmethod
+    def _substitute_variable(command_template: str, var_name: str, quoted_path: str) -> str:
+        return re.sub(rf'\b{re.escape(var_name)}\b', quoted_path, command_template)
+
+    @staticmethod
+    def run(var_name: str, pattern: str, command_template: str, executor: Executor):
+        matches = glob.glob(pattern, recursive=True)
+
+        if not matches:
+            cprint(f"No matches found for pattern '{pattern}'", Color.YELLOW)
+            return
+
+        has_placeholder = bool(re.search(r'\{[^}]+\}', command_template))
+
+        for match in matches:
+            path = Path(match)
+
+            if has_placeholder:
+                cmd_str = ForLoop._substitute_placeholders(command_template, path)
+            else:
+                quoted = shlex.quote(str(path))
+                cmd_str = ForLoop._substitute_variable(command_template, var_name, quoted)
+
+            try:
+                cmd_args = shlex.split(cmd_str)
+            except ValueError as e:
+                cprint(f"[ERROR] Invalid command: {cmd_str} ({e})", Color.RED)
+                continue
+
+            executor.run_cmd(cmd_args)
+
+
+# ============================================================================
+# Main EasyBash
 # ============================================================================
 
 class EasyBash:
     def __init__(self):
         self.executor = Executor()
+
+    def help(self, line):
+        parts = shlex.split(line)
+
+        if len(parts) == 1:
+            cprint("Available commands:", Color.CYAN)
+            for cmd in HELP:
+                cprint(f"  {cmd} - {HELP[cmd]['desc']}", Color.GREEN)
+            cprint("Use: help <command>", Color.YELLOW)
+            return
+
+        cmd = parts[1]
+        if cmd in HELP:
+            info = HELP[cmd]
+            cprint(f"{cmd}", Color.CYAN)
+            cprint(f"Usage: {info['usage']}", Color.GREEN)
+            cprint(f"Description: {info['desc']}", Color.BLUE)
+            cprint(f"Example: {info['example']}", Color.YELLOW)
+        else:
+            cprint(f"[ERROR] No help for '{cmd}'", Color.RED)
+
+    def copy(self, line):
+        parts = shlex.split(line)
+        if len(parts) < 4 or parts[2] != 'to':
+            cprint("[ERROR] Usage: copy SRC to DST1|DST2", Color.RED)
+            return
+        FileOps.copy(parts[1], parts[3].split('|'))
+
+    def move(self, line):
+        parts = shlex.split(line)
+        if len(parts) < 4 or parts[2] != 'to':
+            cprint("[ERROR] Usage: move SRC to DST1|DST2", Color.RED)
+            return
+        FileOps.move(parts[1], parts[3].split('|'))
+
+    def find(self, line):
+        parts = shlex.split(line)
+        if len(parts) < 2:
+            cprint("[ERROR] Usage: find PATTERN [ROOT]", Color.RED)
+            return
+        Finder.find(parts[1], parts[2] if len(parts) > 2 else ".")
 
     def run(self, raw):
         raw = raw.strip()
@@ -351,51 +327,40 @@ class EasyBash:
 
         cmd = tokens[0]
 
-        # exit
-        if cmd == "exit":
-            raise SystemExit
+        if cmd == "help":
+            return self.help(raw)
 
-        # copy
+        if raw == "dry on":
+            self.executor.dry_run = True
+            cprint("[DRY RUN ON]", Color.YELLOW)
+            return
+        if raw == "dry off":
+            self.executor.dry_run = False
+            cprint("[DRY RUN OFF]", Color.YELLOW)
+            return
+
         if cmd == "copy":
-            return FileOps.copy(tokens[1], tokens[3].split("|"))
-
-        # move
+            return self.copy(raw)
         if cmd == "move":
-            return FileOps.move(tokens[1], tokens[3].split("|"))
-
-        # find
+            return self.move(raw)
         if cmd == "find":
-            return Finder.find(tokens[1], tokens[2] if len(tokens) > 2 else ".")
+            return self.find(raw)
 
-        # CL
-        if cmd == "cl":
-            root = tokens[1] if len(tokens) > 1 else "."
-            exts = None
-            empty = "--empty" in tokens
-            days = None
+        if cmd == "for" and "=>" in raw:
+            left, right = raw.split("=>", 1)
+            tokens = shlex.split(left)
+            if len(tokens) != 4 or tokens[2] != "in":
+                cprint("[ERROR] Usage: for VAR in PATTERN => COMMAND", Color.RED)
+                return
+            ForLoop.run(tokens[1], tokens[3], right.strip(), self.executor)
+            return
 
-            if "--ext" in tokens:
-                i = tokens.index("--ext")
-                exts = tokens[i+1:]
-
-            if "--days" in tokens:
-                i = tokens.index("--days")
-                days = int(tokens[i+1])
-
-            return FileManager.cl(root, exts, empty, days)
-
-        # ORG
-        if cmd == "org":
-            root = tokens[1] if len(tokens) > 1 else "."
-            return FileManager.org(root)
-
-        # FIND DUP
-        if cmd == "finddup":
-            root = tokens[1] if len(tokens) > 1 else "."
-            return FileManager.finddup(root)
-
-        # fallback
-        return self.executor.single(tokens)
+        if '|' in cmd:
+            self.executor.parallel(cmd.split('|'), tokens[1:])
+        elif '>' in cmd:
+            self.executor.chain(cmd.split('>'), tokens[1:])
+        else:
+            self.executor.single(tokens)
 
 
 # ============================================================================
@@ -405,16 +370,16 @@ class EasyBash:
 if __name__ == "__main__":
     eb = EasyBash()
 
-    cprint("EasyBash v6.3 🚀", Color.CYAN)
+    cprint("EasyBash v6.2 🚀", Color.CYAN)
 
     while True:
         try:
             cmd = input("EasyBash> ")
+            if cmd.strip() == "exit":
+                break
             eb.run(cmd)
         except KeyboardInterrupt:
             print()
-            break
-        except SystemExit:
             break
         except Exception as e:
             cprint(f"[ERROR] {e}", Color.RED)
