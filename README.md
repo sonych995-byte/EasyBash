@@ -190,11 +190,15 @@ EasyBash is a Python CLI tool that simplifies shell workflows by adding parallel
 
 ## 📥 Installation
 
+Clone the repository and make the script executable:
+
 ```bash
 git clone https://github.com/sonych995-byte/EasyBash.git
 cd EasyBash
-chmod +x easybash
+chmod +x easybash.py
 ```
+
+> **Do not move or copy `easybash.py` out of the cloned folder.** EasyBash's built-in `update` command runs `git pull` from the directory where `easybash.py` lives. If the script is moved away from the Git repository, `update` will fail.
 
 ---
 
@@ -206,27 +210,132 @@ python easybash.py
 
 ---
 
-## 🌍 Global Setup
+## 🔗 Global Setup (Symbolic Link)
 
-**Linux / macOS:**
+Using a symbolic link — instead of copying or moving the script — keeps `easybash.py` inside its Git repository folder at all times. This means the built-in `update` command can pull new versions without any manual steps.
+
+### Linux / macOS
+
+**Option A — user-local install (recommended, no `sudo` needed):**
+
 ```bash
-chmod +x easybash
-sudo mv easybash /usr/local/bin/
+mkdir -p ~/.local/bin
+ln -s "$(pwd)/easybash.py" ~/.local/bin/easybash
 ```
 
-**Windows:**
+Then make sure `~/.local/bin` is in your `PATH`. Add this line to `~/.bashrc`, `~/.zshrc`, or the equivalent for your shell if it is not already present:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Reload your shell:
+
+```bash
+source ~/.bashrc   # or: source ~/.zshrc
+```
+
+**Option B — system-wide install (requires `sudo`):**
+
+```bash
+sudo ln -s "$(pwd)/easybash.py" /usr/local/bin/easybash
+```
+
+> ⚠️ **Note for `sudo` users:** The symlink will be owned by root, but `git pull` (run by the `update` command) operates on the source files in your cloned folder. Make sure your user account has write permission to the cloned folder, otherwise `update` will fail.
+
+---
+
+### WSL (Windows Subsystem for Linux)
+
+Follow the Linux instructions above. WSL supports `ln -s` natively. Use the WSL filesystem path for the clone:
+
+```bash
+mkdir -p ~/.local/bin
+ln -s "$(pwd)/easybash.py" ~/.local/bin/easybash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+---
+
+### Termux
+
+```bash
+mkdir -p ~/.local/bin
+ln -s "$(pwd)/easybash.py" ~/.local/bin/easybash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Add the `export` line to `~/.bashrc` (or `~/.zshrc`) so it persists across sessions.
+
+---
+
+### Windows (Native)
+
+Windows does not support Unix symbolic links. Use a **batch wrapper file** instead.
+
+**Step 1 — Create `easybash.bat`** in a folder that is already in your system `PATH` (e.g. `C:\tools\`):
+
 ```bat
 @echo off
-python C:\path\to\easybash.py %*
+python C:\path\to\EasyBash\easybash.py %*
 ```
 
-> Add the script's directory to your system `PATH`.
+Replace `C:\path\to\EasyBash\easybash.py` with the actual absolute path to your cloned `easybash.py`. Save the file as `easybash.bat`.
 
-**Termux:**
+**Step 2 — (If needed) Add the folder to `PATH`:**
+
+Open **System Properties → Environment Variables**, find `Path` under User variables, and add the folder containing `easybash.bat`.
+
+> ℹ️ **Requirements:** Python and Git must both be installed and available in `PATH`. Verify with `python --version` and `git --version` in a Command Prompt before proceeding.
+
+> ℹ️ **Updating on Windows:** Run `easybash` and type `update` at the prompt. Git will pull the latest `easybash.py` in place. The `.bat` wrapper does not need to be changed because it always points to the same file path.
+
+---
+
+## ✅ Verify Installation
+
+After completing the setup for your platform, open a new terminal and run:
+
 ```bash
-chmod +x easybash
-mv easybash $PREFIX/bin/
+easybash
 ```
+
+You should see the prompt:
+
+```
+EasyBash v6.4.1 🚀
+EasyBash>
+```
+
+To confirm that the `update` command can reach the repository without making changes, run a dry-run check inside EasyBash:
+
+```
+dry on
+update
+dry off
+```
+
+You should see:
+
+```
+[DRY-RUN] Would run: git pull https://github.com/sonych995-byte/EasyBash.git
+```
+
+If you see this message, the installation is complete and updates will work correctly.
+
+---
+
+## 📝 Important Notes
+
+- **Updating never breaks the link.** `git pull` updates the files inside the repository folder. The symlink (or `.bat` wrapper) still points to the same path — no reconfiguration needed.
+- **To uninstall:** Remove the symlink (or `.bat` file) and delete the cloned folder.
+  ```bash
+  # Linux / macOS / Termux
+  rm ~/.local/bin/easybash
+  rm -rf /path/to/EasyBash
+  ```
+- **Never move `easybash.py`** out of its Git repository folder. Moving the file breaks both the symlink and the `update` command.
+- **If you previously installed by copying or moving the script** to a directory in `PATH`, remove that copy first, then create the symlink as described above. Otherwise the old copy will shadow the linked version.
 
 ---
 
