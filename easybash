@@ -424,7 +424,7 @@ class ForLoop:
 
 
 # ============================================================================
-# Tree Command (Detailed Directory Tree)
+# Tree Command (Detailed Directory Tree) - MODIFIED with blank lines
 # ============================================================================
 
 class TreeDisplay:
@@ -525,6 +525,7 @@ class TreeDisplay:
             root_name += "/"
         info = TreeDisplay._get_file_info(root)
         print(f"{root_name} {info}")
+        print()   # blank line after root for better readability
 
         if root.is_dir() and not root.is_symlink():
             try:
@@ -547,6 +548,7 @@ class TreeDisplay:
                 lines = TreeDisplay._tree_lines(child, "", is_last)
                 for line in lines:
                     print(line)
+                    print()   # blank line after each tree entry
 
 
 # ============================================================================
@@ -711,7 +713,7 @@ class EasyBash:
 if __name__ == "__main__":
     eb = EasyBash()
 
-    cprint("EasyBash v6.4 🚀", Color.CYAN)
+    cprint("EasyBash v6.4.1 🚀", Color.CYAN)
 
     while True:
         try:
