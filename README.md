@@ -1,7 +1,27 @@
-# EasyBash v6.3
+# EasyBash v6.4
 
 ![python](https://img.shields.io/badge/python-3.8+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## 🆕 Updates (v6.4)
+
+### 1. New Command: `update` – Self-Update from Remote Repository
+
+A new `update` command has been added to allow EasyBash to update itself directly from the official GitHub repository.
+
+- Runs `git pull https://github.com/sonych995-byte/EasyBash.git` from the directory where `easybash.py` is located
+- Resolves the script's parent directory at runtime using `Path(__file__).parent.resolve()` — no hardcoded paths
+- Prints a `✅ Update successful!` message (including `stdout` from git) on success
+- Prints a `❌ Update failed with code N` message and `stderr` output on failure
+- Handles `subprocess.TimeoutExpired` (60-second timeout), `FileNotFoundError` (git not installed), and general exceptions with descriptive error messages
+- Respects dry-run mode: when `dry on` is active, prints `[DRY-RUN] Would run: git pull ...` without executing
+- Registered in the `HELP` dictionary with usage `update` and accessible via `help update`
+
+```bash
+update
+```
 
 ---
 
@@ -403,6 +423,16 @@ tree /home/user/docs
 
 ---
 
+### 🔄 update – Update EasyBash from the remote repository
+
+```bash
+update
+```
+
+Pulls the latest version of EasyBash from the official GitHub repository using `git pull`. The script's own directory is used as the working directory, so no manual path configuration is needed. Requires `git` to be installed. Respects dry-run mode.
+
+---
+
 ### 🧪 Dry‑run mode – Preview commands without executing
 
 ```bash
@@ -410,7 +440,7 @@ dry on
 dry off
 ```
 
-When dry-run is **ON**, all commands are printed with a `[DRY-RUN]` prefix but not executed. Shell commands (parallel, chain, for) and `finddup` file operations (delete/move) are all affected. `copy`, `move`, and `find` are not affected. Use this to safely verify what will happen before running for real.
+When dry-run is **ON**, all commands are printed with a `[DRY-RUN]` prefix but not executed. Shell commands (parallel, chain, for), `finddup` file operations (delete/move), and `update` (git pull) are all affected. `copy`, `move`, and `find` are not affected. Use this to safely verify what will happen before running for real.
 
 ---
 
@@ -447,7 +477,7 @@ Exits the EasyBash interactive session. You can also press `Ctrl+C` at any time 
 
 ## 📦 Version
 
-v6.3
+v6.4
 
 ---
 
@@ -456,7 +486,7 @@ v6.3
 When you run EasyBash, you'll see:
 
 ```
-EasyBash v6.3 🚀
+EasyBash v6.4 🚀
 EasyBash>
 ```
 
@@ -470,6 +500,7 @@ move data.csv to processed|archive
 find *.log ./logs
 finddup /home/user/docs        # find and handle duplicate files
 tree /home/user/docs           # display directory tree with file info
+update                         # update EasyBash from remote repository
 for f in *.txt => echo f
 for f in *.py => python {abs}
 src|tests|docs git status      # parallel (up to 8 threads)
@@ -888,6 +919,63 @@ for f in **/*.log => rm {}
 
 ---
 
+### update
+
+**Description**
+
+Updates EasyBash in-place by running `git pull` against the official remote repository. The working directory is resolved dynamically from the script's own location, so the command works regardless of where EasyBash was launched from.
+
+**Syntax**
+
+```
+update
+```
+
+**Parameters**
+
+None. The command takes no arguments.
+
+**Behavior**
+
+1. The command is dispatched when the first token is `update`.
+2. If dry-run mode is active, a yellow `[DRY-RUN] Would run: git pull https://github.com/sonych995-byte/EasyBash.git` message is printed and the function returns immediately without executing anything.
+3. The script's parent directory is resolved with `Path(__file__).parent.resolve()` and used as the `cwd` for the subprocess.
+4. `subprocess.run()` is called with `["git", "pull", "https://github.com/sonych995-byte/EasyBash.git"]`, `capture_output=True`, `text=True`, and a **60-second timeout**.
+5. On success (`returncode == 0`): prints a green `✅ Update successful!` message; if `stdout` is non-empty, it is also printed in cyan.
+6. On failure (`returncode != 0`): prints a red `❌ Update failed with code N` message; if `stderr` is non-empty, it is printed in red.
+7. The following exceptions are caught and reported:
+   - `subprocess.TimeoutExpired` → `[ERROR] Git operation timed out`
+   - `FileNotFoundError` → `[ERROR] 'git' command not found. Please install Git.`
+   - Any other exception → `[ERROR] <message>`
+
+**Notes**
+
+- The remote URL (`https://github.com/sonych995-byte/EasyBash.git`) is hardcoded in the source. No `origin` remote needs to be configured.
+- The update operates on the files in the same directory as `easybash.py`. If EasyBash was installed globally (e.g., `/usr/local/bin/`), `git pull` must be able to run in that directory, which requires it to be a valid git repository.
+- Unlike `finddup` delete/move operations, `update` is suppressed entirely in dry-run mode — no network request or subprocess is spawned.
+- `git` must be available in `PATH`. If it is not installed, a clear error message is shown.
+
+**Examples**
+
+```bash
+# Update EasyBash to the latest version
+update
+
+# Preview the update without executing
+dry on
+update
+dry off
+```
+
+**Edge Cases**
+
+- If the directory containing `easybash.py` is not a git repository, `git pull` will exit with a non-zero code and an error message from git will be printed via `stderr`.
+- If the network is unreachable, `git pull` will fail with a non-zero exit code.
+- If the 60-second timeout is exceeded (e.g., due to a very slow network), the subprocess is terminated and `[ERROR] Git operation timed out` is printed.
+- Running `help update` prints the registered usage and description from the `HELP` dictionary.
+
+---
+
 ### dry
 
 **Description**
@@ -926,6 +1014,7 @@ Dry-run affects all commands routed through `Executor.run_cmd()`:
 | `for` loop body | Yes |
 | Single shell command | Yes |
 | `finddup` (delete/move operations) | Yes |
+| `update` (git pull) | Yes |
 | `copy` | No |
 | `move` | No |
 | `find` | No |
@@ -1008,6 +1097,7 @@ The following commands have registered help entries:
 | `dry` | Yes |
 | `exit` | Yes |
 | `tree` | Yes |
+| `update` | Yes |
 
 **Notes**
 
