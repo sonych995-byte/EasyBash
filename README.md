@@ -1,7 +1,21 @@
-# EasyBash v6.4
+# EasyBash v6.4.1
 
 ![python](https://img.shields.io/badge/python-3.8+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## 🆕 Updates (v6.4.1)
+
+### 1. Improved `tree` Output Readability
+
+The `tree` command's output now includes blank lines to improve readability of large directory listings.
+
+- A blank line is printed after the root header line (`TreeDisplay.display()`)
+- A blank line is printed after each entry in the top-level tree loop (`TreeDisplay.display()`)
+- No change to `TreeDisplay._tree_lines()` or any metadata fields
+
+This change affects display formatting only. All metadata, sort order, symlink handling, and permission output remain identical to v6.4.
 
 ---
 
@@ -414,6 +428,8 @@ Prints a recursive directory tree starting at `PATH` (defaults to `.`). Each ent
 
 Directories are listed before symlinks, which are listed before regular files. Symlinks are marked with `@` and display their link target. Directories are marked with `/`. Descends into real directories only; symlink directories are not followed.
 
+A blank line is printed after the root header and after each entry in the tree, improving readability of large directory listings.
+
 Examples:
 
 ```bash
@@ -477,7 +493,7 @@ Exits the EasyBash interactive session. You can also press `Ctrl+C` at any time 
 
 ## 📦 Version
 
-v6.4
+v6.4.1
 
 ---
 
@@ -486,7 +502,7 @@ v6.4
 When you run EasyBash, you'll see:
 
 ```
-EasyBash v6.4 🚀
+EasyBash v6.4.1 🚀
 EasyBash>
 ```
 
@@ -794,10 +810,11 @@ tree [PATH]
 1. The input line is tokenized with `shlex.split()`. If a second token is present it is used as `PATH`; otherwise `.` is used.
 2. `PATH` is resolved to an absolute path. If it does not exist, an error is printed and the command aborts.
 3. `TreeDisplay.display()` prints the root node with its metadata, then recursively prints all children using `TreeDisplay._tree_lines()`.
-4. Within each directory, entries are sorted: real directories first, then symlinks, then regular files. Each tier is sorted alphabetically (case-insensitive).
-5. Symlink directories are **not** descended into, preventing infinite loops from circular links.
-6. If a directory cannot be listed (e.g., permission denied), a `[Permission denied]` notice is printed in place of its children.
-7. Each node line includes inline metadata in the format:
+4. A blank line is printed immediately after the root header line, and a blank line is printed after each child entry in the tree.
+5. Within each directory, entries are sorted: real directories first, then symlinks, then regular files. Each tier is sorted alphabetically (case-insensitive).
+6. Symlink directories are **not** descended into, preventing infinite loops from circular links.
+7. If a directory cannot be listed (e.g., permission denied), a `[Permission denied]` notice is printed in place of its children.
+8. Each node line includes inline metadata in the format:
 
 ```
 [size=N, perms=rwxr-xr-x, owner=user, group=group, modified=YYYY-MM-DD HH:MM:SS]
